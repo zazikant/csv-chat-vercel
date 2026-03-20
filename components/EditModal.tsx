@@ -89,8 +89,9 @@ export default function EditModal({ record, mode, onClose, onSave }: Props) {
   const field = (
     key: keyof ContactRow,
     label: string,
-    type: "text" | "email" | "number" | "date" | "autocomplete",
-    colSpan = false
+    type: "text" | "email" | "number" | "date" | "autocomplete" | "textarea",
+    colSpan = false,
+    placeholder?: string
   ) => (
     <div key={key} className={colSpan ? "col-span-2" : ""}>
       <label className="block text-xs font-medium text-gray-500 mb-1.5">{label}</label>
@@ -107,6 +108,15 @@ export default function EditModal({ record, mode, onClose, onSave }: Props) {
           value={(form[key] as number) ?? ""}
           onChange={(e) => setVal(key, e.target.value ? Number(e.target.value) : null)}
           className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300"
+          placeholder={placeholder}
+        />
+      ) : type === "textarea" ? (
+        <textarea
+          value={(form[key] as string) || ""}
+          onChange={(e) => setVal(key, e.target.value)}
+          rows={3}
+          placeholder={placeholder}
+          className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300 resize-none"
         />
       ) : (
         <input
@@ -114,6 +124,7 @@ export default function EditModal({ record, mode, onClose, onSave }: Props) {
           value={(form[key] as string) || ""}
           onChange={(e) => setVal(key, e.target.value)}
           className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300"
+          placeholder={placeholder}
         />
       )}
     </div>
@@ -147,10 +158,10 @@ export default function EditModal({ record, mode, onClose, onSave }: Props) {
           )}
 
           {section("Proposal Details", <>
-            {field("proposal_number", "Proposal Number", "autocomplete")}
-            {field("project_name", "Project Name", "autocomplete")}
-            {field("proposal_enquiry_for", "Proposal Enquiry For", "autocomplete")}
-            {field("proposal_value_inr", "Proposal Value (₹)", "number")}
+            {field("proposal_number", "Proposal Number", "text", false, "e.g. GEM/2024/001")}
+            {field("project_name", "Project Name", "text", false, "e.g. Mumbai Metro Phase 2")}
+            {field("proposal_enquiry_for", "Proposal Enquiry For", "text", false, "e.g. Project Management Consultancy")}
+            {field("proposal_value_inr", "Proposal Value (₹)", "number", false, "e.g. 5000000")}
             {field("quotation_method", "Quotation Method", "autocomplete")}
             {field("department", "Department", "autocomplete")}
             {field("status", "Status", "autocomplete")}
@@ -158,19 +169,19 @@ export default function EditModal({ record, mode, onClose, onSave }: Props) {
           </>)}
 
           {section("Customer & Project", <>
-            {field("company_name", "Company Name", "autocomplete", true)}
-            {field("type_of_customer", "Type of Customer", "autocomplete")}
+            {field("company_name", "Company Name", "text", true, "e.g. Godrej Properties")}
+            {field("type_of_customer", "Type of Customer", "text", false, "e.g. Contractor")}
             {field("existing_new_customer", "Existing / New Customer", "autocomplete")}
-            {field("sector", "Sector", "autocomplete")}
+            {field("sector", "Sector", "text", false, "e.g. Real Estate")}
             {field("inbound_outbound", "Inbound / Outbound", "autocomplete")}
           </>)}
 
           {section("Contact", <>
-            {field("name", "Contact Name", "autocomplete")}
-            {field("designation", "Designation", "autocomplete")}
-            {field("email", "Email", "email")}
-            {field("phone_number", "Phone", "text")}
-            {field("city", "City", "autocomplete")}
+            {field("name", "Contact Name", "text", false, "e.g. Rajesh Kumar")}
+            {field("designation", "Designation", "text", false, "e.g. Project Manager")}
+            {field("email", "Email", "email", false, "e.g. rajesh@company.com")}
+            {field("phone_number", "Phone", "text", false, "e.g. +91 9876543210")}
+            {field("city", "City", "text", false, "e.g. Mumbai")}
           </>)}
 
           {section("Timeline & Submission", <>
@@ -180,7 +191,7 @@ export default function EditModal({ record, mode, onClose, onSave }: Props) {
           </>)}
 
           {section("Notes", <>
-            {field("remarks", "Remarks", "text", true)}
+            {field("remarks", "Remarks", "textarea", true, "Add notes or latest update...")}
           </>)}
         </div>
 
