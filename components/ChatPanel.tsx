@@ -2,11 +2,18 @@
 
 import { useState, useRef, useEffect } from "react";
 import { ContactRow } from "@/lib/langgraph/state";
+import SettingsPanel from "./SettingsPanel";
 
 interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   sql?: string;
+}
+
+interface Settings {
+  provider: "openrouter" | "nvidia";
+  apiKey: string;
+  model: string;
 }
 
 interface Props {
@@ -24,6 +31,11 @@ export default function ChatPanel({ sessionId, onTableUpdate }: Props) {
   ]);
   const [input, setInput]         = useState("");
   const [loading, setLoading]     = useState(false);
+  const [settings, setSettings]   = useState<Settings>({
+    provider: "openrouter",
+    apiKey: "",
+    model: "",
+  });
   const bottomRef                 = useRef<HTMLDivElement>(null);
   const inputRef                  = useRef<HTMLInputElement>(null);
 
@@ -43,7 +55,13 @@ export default function ChatPanel({ sessionId, onTableUpdate }: Props) {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userQuery: query, sessionId }),
+        body: JSON.stringify({ 
+          userQuery: query, 
+          sessionId,
+          llmProvider: settings.provider,
+          apiKey: settings.apiKey,
+          model: settings.model,
+        }),
       });
 
       const data = await res.json();
@@ -98,8 +116,16 @@ export default function ChatPanel({ sessionId, onTableUpdate }: Props) {
   return (
     <div className="flex flex-col h-full bg-white">
       <div className="px-4 py-3 border-b border-gray-200 bg-white">
-        <h2 className="text-sm font-semibold text-gray-700">Chat with your data</h2>
-        <p className="text-xs text-gray-400 mt-0.5">Powered by LangGraph + GLM-4.5</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-sm font-semibold text-gray-700">Chat with your data</h2>
+            <p className="text-xs text-gray-400 mt-0.5">
+              {settings.provider === "nvidia" ? "NVIDIA" : "OpenRouter"}
+              {settings.model && ` • ${settings.model}`}
+            </p>
+          </div>
+          <SettingsPanel settings={settings} onSettingsChange={setSettings} />
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">

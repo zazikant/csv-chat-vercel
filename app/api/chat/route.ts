@@ -3,11 +3,11 @@ import { graph } from "@/lib/langgraph/graph";
 import { loadHistory } from "@/lib/langgraph/tools";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 export async function POST(req: NextRequest) {
   try {
-    const { userQuery, sessionId } = await req.json();
+    const { userQuery, sessionId, llmProvider, apiKey, model } = await req.json();
 
     if (!userQuery?.trim() || !sessionId) {
       return NextResponse.json(
@@ -30,6 +30,9 @@ export async function POST(req: NextRequest) {
       finalResponse: "",
       shouldUpdateTable: false,
       tableSchema:   "",
+      llmProvider: llmProvider || "openrouter",
+      apiKey: apiKey || "",
+      model: model || "",
     });
 
     return NextResponse.json({

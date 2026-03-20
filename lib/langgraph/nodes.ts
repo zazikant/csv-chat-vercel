@@ -1,6 +1,28 @@
-import { llm } from "../llm";
+import { ChatOpenAI } from "@langchain/openai";
 import { getTableSchema, executeSQL, saveMessage } from "./tools";
 import { QueryGraphStateType } from "./state";
+import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
+
+function getLLM(state: QueryGraphStateType): BaseChatModel {
+  if (state.llmProvider === "nvidia") {
+    return new ChatOpenAI({
+      model: state.model || "openai/gpt-oss-120b",
+      apiKey: state.apiKey || "",
+      configuration: {
+        baseURL: "https://integrate.api.nvidia.com/v1",
+      } as Record<string, unknown>,
+      temperature: 0,
+    });
+  }
+  return new ChatOpenAI({
+    model: state.model || "z-ai/glm-4.5-air:free",
+    apiKey: state.apiKey || "",
+    configuration: {
+      baseURL: "https://openrouter.ai/api/v1",
+    } as Record<string, unknown>,
+    temperature: 0,
+  });
+}
 
 export async function schemaLoaderNode(
   _state: QueryGraphStateType
@@ -13,6 +35,7 @@ export async function schemaLoaderNode(
 export async function intentClassifierNode(
   state: QueryGraphStateType
 ): Promise<Partial<QueryGraphStateType>> {
+  const llm = getLLM(state);
   const historyText = state.conversationHistory
     .slice(-10)
     .map((m) => `${m.role.toUpperCase()}: ${m.content}`)
@@ -50,6 +73,7 @@ Return ONLY the single classification word, nothing else.`;
 export async function sqlGeneratorNode(
   state: QueryGraphStateType
 ): Promise<Partial<QueryGraphStateType>> {
+  const llm = getLLM(state);
   const historyText = state.conversationHistory
     .slice(-10)
     .map((m) => `${m.role.toUpperCase()}: ${m.content}`)
@@ -110,6 +134,7 @@ export async function queryExecutorNode(
 export async function errorRecoveryNode(
   state: QueryGraphStateType
 ): Promise<Partial<QueryGraphStateType>> {
+  const llm = getLLM(state);
   const prompt = `This PostgreSQL query failed. Fix it.
 
 Schema:
@@ -139,6 +164,7 @@ Return ONLY the corrected SQL SELECT statement, nothing else. No markdown, no ba
 export async function responseFormatterNode(
   state: QueryGraphStateType
 ): Promise<Partial<QueryGraphStateType>> {
+  const llm = getLLM(state);
 
   if (state.queryIntent === "unknown") {
     const msg =

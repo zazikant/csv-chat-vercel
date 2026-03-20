@@ -15,6 +15,8 @@ export interface ContactRow {
   designation: string;
 }
 
+export type LLMProvider = "openrouter" | "nvidia";
+
 export const QueryGraphState = Annotation.Root({
   userQuery: Annotation<string>({
     reducer: (_, next) => next,
@@ -51,6 +53,15 @@ export const QueryGraphState = Annotation.Root({
       const merged = [...existing, ...next];
       return merged.slice(-20);
     },
+  }),
+  llmProvider: Annotation<LLMProvider>({
+    reducer: (_, next) => next,
+  }),
+  apiKey: Annotation<string>({
+    reducer: (_, next) => next,
+  }),
+  model: Annotation<string>({
+    reducer: (_, next) => next,
   }),
 });
 

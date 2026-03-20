@@ -25,13 +25,14 @@ export async function executeSQL(
   sql: string
 ): Promise<{ success: boolean; result?: ContactRow[]; error?: string }> {
   try {
-    const trimmed = sql.trim().toLowerCase();
+    const cleanedSQL = sql.replace(/;$/, "").trim();
+    const trimmed = cleanedSQL.toLowerCase();
     if (!trimmed.startsWith("select")) {
       return { success: false, error: "Only SELECT queries are allowed." };
     }
 
     const { data, error } = await supabase.rpc("run_select_query", {
-      query_text: sql,
+      query_text: cleanedSQL,
     });
 
     if (error) return { success: false, error: error.message };
