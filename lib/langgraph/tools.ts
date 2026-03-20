@@ -35,7 +35,7 @@ export async function executeSQL(
   sql: string
 ): Promise<{ success: boolean; result?: ContactRow[]; error?: string }> {
   try {
-    const cleanedSQL = sql.replace(/;$/, "").trim();
+    const cleanedSQL = sql.replace(/;$/, "").replace(/\bpublic\./gi, "").replace(/FROM\s+public\./gi, "FROM ").trim();
     const trimmed = cleanedSQL.toLowerCase();
     if (!trimmed.startsWith("select")) {
       return { success: false, error: "Only SELECT queries are allowed." };
@@ -47,8 +47,11 @@ export async function executeSQL(
 
     if (error) return { success: false, error: error.message };
 
-    const result = typeof data === "string" ? JSON.parse(data) : data;
-    return { success: true, result: result ?? [] };
+    let result = typeof data === "string" ? JSON.parse(data) : data;
+    if (result && typeof result === "object" && !Array.isArray(result)) {
+      result = Object.values(result)[0];
+    }
+    return { success: true, result: Array.isArray(result) ? result : [] };
   } catch (err) {
     return { success: false, error: String(err) };
   }

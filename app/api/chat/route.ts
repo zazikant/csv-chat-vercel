@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       response:          result.finalResponse,
       queryResult:       result.queryResult,
-      shouldUpdateTable: Boolean(result.shouldUpdateTable && Array.isArray(result.queryResult) && result.queryResult.length > 0),
+      shouldUpdateTable: result.shouldUpdateTable,
       generatedSQL:      result.generatedSQL,
       sessionId,
     });

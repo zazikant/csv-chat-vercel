@@ -52,6 +52,7 @@ export default function EditModal({ record, mode, onClose, onSave }: Props) {
         throw new Error(data.error || "Save failed");
       }
       onSave();
+      onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Save failed");
     } finally {

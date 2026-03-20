@@ -93,23 +93,25 @@ Intent: ${state.queryIntent}
 
 Rules:
 1. Return ONLY a valid SQL SELECT statement — no markdown, no backticks, no explanation.
-2. Always query from table "contacts".
+2. Always query from table "contacts" (never prefix with schema like "public.").
 3. Use ILIKE for case-insensitive text comparisons (e.g. WHERE city ILIKE 'mumbai').
 4. For "reset" or "show all" intent: return SELECT * FROM contacts ORDER BY id;
-5. For count queries: return SELECT COUNT(*) as count FROM contacts WHERE ...;
-6. For aggregate queries: use GROUP BY appropriately.
-7. For sort intent: ORDER BY the relevant column (proposal_value_inr DESC, enquiry_received_date DESC, etc.)
-8. For proposal_value_inr, treat nulls as 0 in COALESCE for SUM/AVG.
-9. Always end with a semicolon.
+5. For "filter" and "lookup" intents: ALWAYS use SELECT * FROM contacts (never select specific columns), then add WHERE and ORDER BY as needed.
+6. For count queries: return SELECT COUNT(*) as count FROM contacts WHERE ...;
+7. For aggregate queries: use GROUP BY appropriately.
+8. For sort intent: SELECT * FROM contacts ORDER BY the relevant column.
+9. For proposal_value_inr, treat nulls as 0 in COALESCE for SUM/AVG.
+10. Always end with a semicolon.
 
 Examples:
-SELECT * FROM contacts WHERE city ILIKE 'mumbai';
+SELECT * FROM contacts WHERE city ILIKE 'mumbai' ORDER BY id;
 SELECT COUNT(*) as count FROM contacts WHERE status ILIKE 'won';
 SELECT * FROM contacts WHERE department ILIKE '%design%' ORDER BY proposal_value_inr DESC;
 SELECT department, COUNT(*) as total, SUM(COALESCE(proposal_value_inr,0)) as total_value FROM contacts GROUP BY department ORDER BY total_value DESC;
-SELECT status, COUNT(*) as count FROM contacts GROUP BY status;
+SELECT status, COUNT(*) as count FROM contacts GROUP BY status ORDER BY count DESC;
 SELECT * FROM contacts WHERE enquiry_received_date >= '2024-01-01' ORDER BY proposal_value_inr DESC;
-SELECT type_of_customer, COUNT(*) as total FROM contacts GROUP BY type_of_customer ORDER BY total DESC;`;
+SELECT type_of_customer, COUNT(*) as total FROM contacts GROUP BY type_of_customer ORDER BY total DESC;
+SELECT * FROM contacts WHERE status ILIKE '%' ORDER BY enquiry_received_date DESC;`;
 
   const response = await llm.invoke(prompt);
   const sql = response.content
@@ -203,9 +205,11 @@ export async function responseFormatterNode(
   }
 
   const returnsRows =
-    state.queryIntent === "filter" ||
+    (state.queryIntent === "filter" ||
     state.queryIntent === "lookup" ||
-    state.queryIntent === "reset";
+    state.queryIntent === "reset") &&
+    Array.isArray(state.queryResult) &&
+    state.queryResult.length > 0;
 
   const resultSummary =
     state.queryResult && state.queryResult.length > 0
