@@ -52,11 +52,12 @@ ${historyText}
 Current user query: "${state.userQuery}"
 
 Classify as exactly ONE of:
-- filter      → user wants rows matching a condition
-- count       → user wants a number or count
-- lookup      → user wants a specific field value for a known person
-- aggregate   → user wants group-by / distinct values / statistics
-- reset       → user wants to see all contacts again (e.g. "show all", "reset", "clear filter")
+- filter      → user wants rows matching a condition (e.g. status, department, sector, city)
+- count       → user wants a number or count (e.g. "how many won", "total proposals")
+- lookup      → user wants a specific field value for a known project or customer
+- aggregate   → user wants group-by / distinct values / statistics / sums
+- sort        → user wants results sorted by a field (value, date, etc.)
+- reset       → user wants to see all proposals again (e.g. "show all", "reset", "clear filter")
 - unknown     → query cannot be answered from this data
 
 Return ONLY the single classification word, nothing else.`;
@@ -97,13 +98,18 @@ Rules:
 4. For "reset" or "show all" intent: return SELECT * FROM contacts ORDER BY id;
 5. For count queries: return SELECT COUNT(*) as count FROM contacts WHERE ...;
 6. For aggregate queries: use GROUP BY appropriately.
-7. Always end with a semicolon.
+7. For sort intent: ORDER BY the relevant column (proposal_value_inr DESC, enquiry_received_date DESC, etc.)
+8. For proposal_value_inr, treat nulls as 0 in COALESCE for SUM/AVG.
+9. Always end with a semicolon.
 
 Examples:
 SELECT * FROM contacts WHERE city ILIKE 'mumbai';
-SELECT COUNT(*) as count FROM contacts WHERE email ILIKE '%gmail%';
-SELECT * FROM contacts WHERE designation ILIKE 'engineer' ORDER BY name;
-SELECT company_name, COUNT(*) as total FROM contacts GROUP BY company_name ORDER BY total DESC;`;
+SELECT COUNT(*) as count FROM contacts WHERE status ILIKE 'won';
+SELECT * FROM contacts WHERE department ILIKE '%design%' ORDER BY proposal_value_inr DESC;
+SELECT department, COUNT(*) as total, SUM(COALESCE(proposal_value_inr,0)) as total_value FROM contacts GROUP BY department ORDER BY total_value DESC;
+SELECT status, COUNT(*) as count FROM contacts GROUP BY status;
+SELECT * FROM contacts WHERE enquiry_received_date >= '2024-01-01' ORDER BY proposal_value_inr DESC;
+SELECT type_of_customer, COUNT(*) as total FROM contacts GROUP BY type_of_customer ORDER BY total DESC;`;
 
   const response = await llm.invoke(prompt);
   const sql = response.content

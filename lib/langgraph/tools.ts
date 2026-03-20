@@ -5,19 +5,29 @@ export function getTableSchema(): string {
   return `
 Table name: contacts
 Columns:
-  - id            (bigint, primary key, auto)
-  - name          (text)
-  - email         (text)
-  - company_name  (text)
-  - phone_number  (text)
-  - city          (text)
-  - designation   (text)
-
-Sample rows:
-  id | name          | email           | company_name | city      | designation
-  1  | Alice Johnson | alice@gmail.com | Acme Corp    | Mumbai    | Manager
-  2  | Bob Smith     | bob@yahoo.com   | BrightTech   | Delhi     | Engineer
-  3  | Carol White   | carol@gmail.com | Acme Corp    | Mumbai    | Director
+  - id                    (bigint, primary key, auto)
+  - name                  (text)
+  - email                 (text)
+  - company_name          (text)
+  - phone_number          (text)
+  - city                  (text)
+  - designation           (text)
+  - enquiry_received_date (date)
+  - go_no_go_decision     (text)         -- Approved / Not Approved / Pending
+  - proposal_sent_date    (date)
+  - mode_of_submission    (text)         -- Email, Hard Copy, Ariba Portal, etc.
+  - proposal_enquiry_for  (text)         -- Service/scope offered by GEM Engserv
+  - project_name          (text)
+  - proposal_value_inr    (bigint)
+  - quotation_method      (text)         -- Lump Sum, Man-Months, Per Day Fee, etc.
+  - department            (text)         -- PMC, QC, Rebar, Design Engineering, etc.
+  - status                (text)         -- Won, Loss, Open, Closed
+  - inbound_outbound      (text)         -- Inbound (received) / Outbound (proactive)
+  - existing_new_customer (text)         -- Existing / New
+  - remarks               (text)
+  - type_of_customer      (text)         -- Consultant, Contractor, Developer, Manufacturer
+  - sector                (text)         -- FMCG, Industrial, Real Estate, Warehousing, etc.
+  - proposal_number       (text)
 `.trim();
 }
 

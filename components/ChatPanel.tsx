@@ -26,7 +26,7 @@ export default function ChatPanel({ sessionId, onTableUpdate }: Props) {
     {
       role: "assistant",
       content:
-        "Hi! Ask me anything about your contacts. Try: \"Show me all contacts from Mumbai\" or \"How many people use Gmail?\"",
+        "Hi! Ask me anything about your proposals and enquiries. Try: \"Show all open proposals\" or \"Total value by department\"",
     },
   ]);
   const [input, setInput]         = useState("");
@@ -106,11 +106,11 @@ export default function ChatPanel({ sessionId, onTableUpdate }: Props) {
   }
 
   const suggestions = [
-    "Show contacts from Mumbai",
-    "How many use Gmail?",
-    "List all Engineers",
-    "Group by company",
-    "Show all",
+    "Show all proposals",
+    "How many Won?",
+    "Total value by department",
+    "Sort by proposal value",
+    "Group by status",
   ];
 
   return (
