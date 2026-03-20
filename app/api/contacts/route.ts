@@ -54,10 +54,22 @@ export async function PUT(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   const body = await req.json();
-  const { id } = body;
 
+  if (Array.isArray(body.ids)) {
+    const { error } = await supabase
+      .from("contacts")
+      .delete()
+      .in("id", body.ids);
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+    return NextResponse.json({ success: true, deleted: body.ids.length });
+  }
+
+  const { id } = body;
   if (!id) {
-    return NextResponse.json({ error: "id is required" }, { status: 400 });
+    return NextResponse.json({ error: "id or ids is required" }, { status: 400 });
   }
 
   const { error } = await supabase

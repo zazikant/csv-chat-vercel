@@ -23,6 +23,16 @@ export default function HomePage() {
   const [editRecord, setEditRecord] = useState<ContactRow | null>(null);
   const [editMode, setEditMode]     = useState<"add" | "edit">("edit");
   const [showUpload, setShowUpload] = useState(false);
+  const [page, setPage]           = useState(1);
+
+  async function handleDeleteRows(ids: number[]) {
+    await fetch("/api/contacts", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids }),
+    });
+    handleSave();
+  }
 
   useEffect(() => {
     fetchAllContacts().then((data) => {
@@ -34,11 +44,13 @@ export default function HomePage() {
   function handleTableUpdate(newRows: ContactRow[]) {
     setRows(newRows);
     setFiltered(true);
+    setPage(1);
   }
 
   function handleReset() {
     setRows(allRows);
     setFiltered(false);
+    setPage(1);
   }
 
   function handleEdit(row: ContactRow) {
@@ -53,6 +65,7 @@ export default function HomePage() {
 
   function handleModalClose() {
     setEditRecord(null);
+    setEditMode("edit");
   }
 
   function handleSave() {
@@ -60,6 +73,7 @@ export default function HomePage() {
       setRows(data);
       setAllRows(data);
       setFiltered(false);
+      setPage(1);
     });
   }
 
@@ -69,10 +83,13 @@ export default function HomePage() {
         <ContactsTable
           rows={rows}
           isFiltered={isFiltered}
+          page={page}
+          onPageChange={setPage}
           onReset={handleReset}
           onEdit={handleEdit}
           onAdd={handleAdd}
           onUpload={() => setShowUpload(true)}
+          onDeleteRows={handleDeleteRows}
         />
       </div>
 

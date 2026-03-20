@@ -2,41 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { ContactRow } from "@/lib/langgraph/state";
-
-const FIELDS: { key: keyof ContactRow; label: string; type: string }[] = [
-  { key: "proposal_number",        label: "Proposal Number",     type: "text" },
-  { key: "project_name",           label: "Project Name",         type: "text" },
-  { key: "name",                   label: "Contact Name",          type: "text" },
-  { key: "email",                  label: "Email",                 type: "email" },
-  { key: "phone_number",           label: "Phone",                 type: "text" },
-  { key: "designation",            label: "Designation",           type: "text" },
-  { key: "company_name",           label: "Company Name",          type: "text" },
-  { key: "type_of_customer",       label: "Type of Customer",      type: "text" },
-  { key: "existing_new_customer",  label: "Existing / New Customer",type: "select" },
-  { key: "sector",                 label: "Sector",                type: "text" },
-  { key: "city",                   label: "City",                  type: "text" },
-  { key: "status",                 label: "Status",                type: "select" },
-  { key: "department",             label: "Department",            type: "select" },
-  { key: "go_no_go_decision",      label: "Go / No-Go Decision",   type: "select" },
-  { key: "inbound_outbound",       label: "Inbound / Outbound",    type: "select" },
-  { key: "proposal_enquiry_for",   label: "Proposal Enquiry For",   type: "text" },
-  { key: "quotation_method",        label: "Quotation Method",       type: "select" },
-  { key: "proposal_value_inr",     label: "Proposal Value (₹)",     type: "number" },
-  { key: "enquiry_received_date",  label: "Enquiry Received Date", type: "date" },
-  { key: "proposal_sent_date",     label: "Proposal Sent Date",    type: "date" },
-  { key: "mode_of_submission",     label: "Mode of Submission",     type: "select" },
-  { key: "remarks",                label: "Remarks",                type: "textarea" },
-];
-
-const SELECT_OPTIONS: Record<string, string[]> = {
-  status: ["Open", "Won", "Loss", "Closed"],
-  department: ["PMC", "QC", "Rebar", "Design Engineering", "Structural", "Electrical", "Mechanical", "Architectural"],
-  go_no_go_decision: ["Approved", "Not Approved", "Pending"],
-  inbound_outbound: ["Inbound", "Outbound"],
-  existing_new_customer: ["Existing", "New"],
-  quotation_method: ["Lump Sum", "Man-Months", "Per Day Fee", "Per Hour Fee", "Item Rate", "Turnkey"],
-  mode_of_submission: ["Email", "Hard Copy", "Ariba Portal", "Courier", "Portal", "In Person"],
-};
+import Autocomplete from "./Autocomplete";
 
 interface Props {
   record: ContactRow | null;
@@ -46,9 +12,9 @@ interface Props {
 }
 
 export default function EditModal({ record, mode, onClose, onSave }: Props) {
-  const [form, setForm] = useState<Partial<ContactRow>>({});
+  const [form, setForm]   = useState<Partial<ContactRow>>({});
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError]   = useState("");
   const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
@@ -64,8 +30,8 @@ export default function EditModal({ record, mode, onClose, onSave }: Props) {
     return () => window.removeEventListener("keydown", handleKey);
   }, [onClose]);
 
-  function handleChange(key: keyof ContactRow, value: string) {
-    setForm((prev) => ({ ...prev, [key]: value || null }));
+  function setVal(key: keyof ContactRow, value: string | number | null) {
+    setForm((prev) => ({ ...prev, [key]: value ?? null }));
   }
 
   async function handleSave() {
@@ -74,9 +40,7 @@ export default function EditModal({ record, mode, onClose, onSave }: Props) {
     try {
       const url = mode === "edit" ? "/api/contacts" : "/api/contacts";
       const method = mode === "edit" ? "PUT" : "POST";
-      const body = mode === "edit"
-        ? { id: record!.id, ...form }
-        : form;
+      const body = mode === "edit" ? { id: record!.id, ...form } : form;
 
       const res = await fetch(url, {
         method,
@@ -88,7 +52,6 @@ export default function EditModal({ record, mode, onClose, onSave }: Props) {
         throw new Error(data.error || "Save failed");
       }
       onSave();
-      onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Save failed");
     } finally {
@@ -108,7 +71,6 @@ export default function EditModal({ record, mode, onClose, onSave }: Props) {
       });
       if (!res.ok) throw new Error("Delete failed");
       onSave();
-      onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Delete failed");
     } finally {
@@ -116,68 +78,112 @@ export default function EditModal({ record, mode, onClose, onSave }: Props) {
     }
   }
 
+  const section = (label: string, children: React.ReactNode) => (
+    <div className="space-y-3">
+      <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-100 pb-1">{label}</h3>
+      <div className="grid grid-cols-2 gap-x-6 gap-y-3">{children}</div>
+    </div>
+  );
+
+  const field = (
+    key: keyof ContactRow,
+    label: string,
+    type: "text" | "email" | "number" | "date" | "autocomplete",
+    colSpan = false
+  ) => (
+    <div key={key} className={colSpan ? "col-span-2" : ""}>
+      <label className="block text-xs font-medium text-gray-500 mb-1.5">{label}</label>
+      {type === "autocomplete" ? (
+        <Autocomplete
+          column={key}
+          value={(form[key] as string) || ""}
+          onChange={(v) => setVal(key, v)}
+          className="w-full"
+        />
+      ) : type === "number" ? (
+        <input
+          type="number"
+          value={(form[key] as number) ?? ""}
+          onChange={(e) => setVal(key, e.target.value ? Number(e.target.value) : null)}
+          className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300"
+        />
+      ) : (
+        <input
+          type={type}
+          value={(form[key] as string) || ""}
+          onChange={(e) => setVal(key, e.target.value)}
+          className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300"
+        />
+      )}
+    </div>
+  );
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
       <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 flex-shrink-0">
           <h2 className="text-base font-semibold text-gray-800">
             {mode === "edit" ? "Edit Record" : "Add New Record"}
           </h2>
-          <button
-            onClick={onClose}
-            className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto px-6 py-4">
-          {error && (
-            <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-600">
-              {error}
-            </div>
-          )}
-          <div className="grid grid-cols-2 gap-x-6 gap-y-4">
-            {FIELDS.map((field) => (
-              <div key={field.key} className={field.type === "textarea" ? "col-span-2" : ""}>
-                <label className="block text-xs font-medium text-gray-500 mb-1.5">
-                  {field.label}
-                </label>
-                {field.type === "textarea" ? (
-                  <textarea
-                    value={(form[field.key] as string) || ""}
-                    onChange={(e) => handleChange(field.key, e.target.value)}
-                    rows={3}
-                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300 resize-none"
-                  />
-                ) : field.type === "select" ? (
-                  <select
-                    value={(form[field.key] as string) || ""}
-                    onChange={(e) => handleChange(field.key, e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300 bg-white"
-                  >
-                    <option value="">— select —</option>
-                    {(SELECT_OPTIONS[field.key] || []).map((opt) => (
-                      <option key={opt} value={opt}>{opt}</option>
-                    ))}
-                  </select>
-                ) : (
-                  <input
-                    type={field.type}
-                    value={(form[field.key] as string | number) || ""}
-                    onChange={(e) => handleChange(field.key, e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300"
-                  />
-                )}
-              </div>
-            ))}
+          <div className="flex items-center gap-3">
+            {record?.proposal_number && (
+              <span className="text-xs text-gray-400 font-mono">{record.proposal_number}</span>
+            )}
+            <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
           </div>
         </div>
 
-        <div className="flex items-center justify-between px-6 py-4 border-t border-gray-200 bg-gray-50">
+        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
+          {error && (
+            <div className="px-4 py-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-600">
+              {error}
+            </div>
+          )}
+
+          {section("Proposal Details", <>
+            {field("proposal_number", "Proposal Number", "autocomplete")}
+            {field("project_name", "Project Name", "autocomplete")}
+            {field("proposal_enquiry_for", "Proposal Enquiry For", "autocomplete")}
+            {field("proposal_value_inr", "Proposal Value (₹)", "number")}
+            {field("quotation_method", "Quotation Method", "autocomplete")}
+            {field("department", "Department", "autocomplete")}
+            {field("status", "Status", "autocomplete")}
+            {field("go_no_go_decision", "Go / No-Go Decision", "autocomplete")}
+          </>)}
+
+          {section("Customer & Project", <>
+            {field("company_name", "Company Name", "autocomplete", true)}
+            {field("type_of_customer", "Type of Customer", "autocomplete")}
+            {field("existing_new_customer", "Existing / New Customer", "autocomplete")}
+            {field("sector", "Sector", "autocomplete")}
+            {field("inbound_outbound", "Inbound / Outbound", "autocomplete")}
+          </>)}
+
+          {section("Contact", <>
+            {field("name", "Contact Name", "autocomplete")}
+            {field("designation", "Designation", "autocomplete")}
+            {field("email", "Email", "email")}
+            {field("phone_number", "Phone", "text")}
+            {field("city", "City", "autocomplete")}
+          </>)}
+
+          {section("Timeline & Submission", <>
+            {field("enquiry_received_date", "Enquiry Received Date", "date")}
+            {field("proposal_sent_date", "Proposal Sent Date", "date")}
+            {field("mode_of_submission", "Mode of Submission", "autocomplete")}
+          </>)}
+
+          {section("Notes", <>
+            {field("remarks", "Remarks", "text", true)}
+          </>)}
+        </div>
+
+        <div className="flex items-center justify-between px-6 py-4 border-t border-gray-200 bg-gray-50 flex-shrink-0">
           <div>
             {mode === "edit" && (
               <button
