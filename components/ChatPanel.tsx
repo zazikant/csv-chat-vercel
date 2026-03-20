@@ -33,8 +33,8 @@ export default function ChatPanel({ sessionId, onTableUpdate }: Props) {
   const [loading, setLoading]     = useState(false);
   const [settings, setSettings]   = useState<Settings>({
     provider: "openrouter",
-    apiKey: "",
-    model: "",
+    apiKey: process.env.NEXT_PUBLIC_OPENROUTER_API_KEY || "",
+    model: "z-ai/glm-4.5-air:free",
   });
   const bottomRef                 = useRef<HTMLDivElement>(null);
   const inputRef                  = useRef<HTMLInputElement>(null);

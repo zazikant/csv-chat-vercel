@@ -13,11 +13,34 @@ interface Props {
   onSettingsChange: (settings: Settings) => void;
 }
 
+const MODELS = {
+  openrouter: "z-ai/glm-4.5-air:free",
+  nvidia: "openai/gpt-oss-120b",
+};
+
 export default function SettingsPanel({ settings, onSettingsChange }: Props) {
   const [isOpen, setIsOpen] = useState(false);
 
-  const handleChange = <K extends keyof Settings>(key: K, value: Settings[K]) => {
-    onSettingsChange({ ...settings, [key]: value });
+  const handleProviderChange = (provider: "openrouter" | "nvidia") => {
+    onSettingsChange({
+      ...settings,
+      provider,
+      model: MODELS[provider],
+    });
+  };
+
+  const handleModelChange = (model: string) => {
+    onSettingsChange({
+      ...settings,
+      model,
+    });
+  };
+
+  const handleApiKeyChange = (apiKey: string) => {
+    onSettingsChange({
+      ...settings,
+      apiKey,
+    });
   };
 
   return (
@@ -50,7 +73,7 @@ export default function SettingsPanel({ settings, onSettingsChange }: Props) {
               <label className="block text-xs font-medium text-gray-600 mb-1">Provider</label>
               <div className="flex gap-2">
                 <button
-                  onClick={() => handleChange("provider", "openrouter")}
+                  onClick={() => handleProviderChange("openrouter")}
                   className={`flex-1 px-3 py-2 text-xs rounded-lg border transition-colors ${
                     settings.provider === "openrouter"
                       ? "bg-blue-50 border-blue-300 text-blue-700"
@@ -60,7 +83,7 @@ export default function SettingsPanel({ settings, onSettingsChange }: Props) {
                   OpenRouter
                 </button>
                 <button
-                  onClick={() => handleChange("provider", "nvidia")}
+                  onClick={() => handleProviderChange("nvidia")}
                   className={`flex-1 px-3 py-2 text-xs rounded-lg border transition-colors ${
                     settings.provider === "nvidia"
                       ? "bg-green-50 border-green-300 text-green-700"
@@ -77,38 +100,46 @@ export default function SettingsPanel({ settings, onSettingsChange }: Props) {
               <input
                 type="password"
                 value={settings.apiKey}
-                onChange={(e) => handleChange("apiKey", e.target.value)}
+                onChange={(e) => handleApiKeyChange(e.target.value)}
                 placeholder={settings.provider === "openrouter" ? "sk-or-v1-..." : "nvapi-..."}
                 className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300"
               />
               <p className="text-xs text-gray-400 mt-1">
                 {settings.provider === "openrouter" 
-                  ? "Get key from openrouter.ai/keys"
-                  : "Get key from build.nvidia.com → API key"}
+                  ? "openrouter.ai/keys"
+                  : "build.nvidia.com → API key"}
               </p>
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Model</label>
+              <label className="block text-xs font-medium text-gray-600 mb-1">
+                Model
+                <span className="ml-1 text-gray-400">(tap to edit)</span>
+              </label>
               <input
                 type="text"
                 value={settings.model}
-                onChange={(e) => handleChange("model", e.target.value)}
-                placeholder={settings.provider === "openrouter" 
-                  ? "e.g., openai/gpt-4o, anthropic/claude-3.5-sonnet"
-                  : "e.g., meta/llama-3.1-405b-instruct"}
+                onChange={(e) => handleModelChange(e.target.value)}
                 className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300"
               />
               <p className="text-xs text-gray-400 mt-1">
                 {settings.provider === "openrouter" 
-                  ? "Browse models at openrouter.ai/models"
-                  : "Browse models at build.nvidia.com/explore/ai-foundational-models"}
+                  ? "openrouter.ai/models"
+                  : "build.nvidia.com/explore/ai-foundational-models"}
               </p>
             </div>
 
             <div className="pt-2 border-t border-gray-100">
-              <p className="text-xs text-gray-400">
-                Current: <span className="font-mono">{settings.model}</span>
+              <p className="text-xs text-gray-500">
+                <span className={`px-2 py-0.5 rounded-full text-xs ${
+                  settings.provider === "nvidia" 
+                    ? "bg-green-100 text-green-700" 
+                    : "bg-blue-100 text-blue-700"
+                }`}>
+                  {settings.provider === "nvidia" ? "NVIDIA" : "OpenRouter"}
+                </span>
+                {" • "}
+                <span className="font-mono">{settings.model}</span>
               </p>
             </div>
           </div>
