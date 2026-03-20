@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { ContactRow } from "@/lib/langgraph/state";
-import Autocomplete from "./Autocomplete";
+import FieldSuggest from "./FieldSuggest";
 
 interface Props {
   record: ContactRow | null;
@@ -89,25 +89,26 @@ export default function EditModal({ record, mode, onClose, onSave }: Props) {
   const field = (
     key: keyof ContactRow,
     label: string,
-    type: "text" | "email" | "number" | "date" | "autocomplete" | "textarea",
+    type: "text" | "email" | "number" | "date" | "textarea",
     colSpan = false,
     placeholder?: string
   ) => (
     <div key={key} className={colSpan ? "col-span-2" : ""}>
       <label className="block text-xs font-medium text-gray-500 mb-1.5">{label}</label>
-      {type === "autocomplete" ? (
-        <Autocomplete
-          column={key}
-          value={(form[key] as string) || ""}
-          onChange={(v) => setVal(key, v)}
-          className="w-full"
-        />
-      ) : type === "number" ? (
+      {type === "number" ? (
         <input
           type="number"
           value={(form[key] as number) ?? ""}
           onChange={(e) => setVal(key, e.target.value ? Number(e.target.value) : null)}
           className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300"
+          placeholder={placeholder}
+        />
+      ) : type === "email" ? (
+        <input
+          type="email"
+          value={(form[key] as string) || ""}
+          onChange={(e) => setVal(key, e.target.value)}
+          className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300 placeholder-gray-600"
           placeholder={placeholder}
         />
       ) : type === "textarea" ? (
@@ -118,13 +119,20 @@ export default function EditModal({ record, mode, onClose, onSave }: Props) {
           placeholder={placeholder}
           className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300 resize-none"
         />
-      ) : (
+      ) : type === "date" ? (
         <input
-          type={type}
+          type="date"
           value={(form[key] as string) || ""}
           onChange={(e) => setVal(key, e.target.value)}
           className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300"
+        />
+      ) : (
+        <FieldSuggest
+          column={key}
+          value={(form[key] as string) || ""}
+          onChange={(v) => setVal(key, v)}
           placeholder={placeholder}
+          className="w-full"
         />
       )}
     </div>
@@ -162,18 +170,18 @@ export default function EditModal({ record, mode, onClose, onSave }: Props) {
             {field("project_name", "Project Name", "text", false, "e.g. Mumbai Metro Phase 2")}
             {field("proposal_enquiry_for", "Proposal Enquiry For", "text", false, "e.g. Project Management Consultancy")}
             {field("proposal_value_inr", "Proposal Value (₹)", "number", false, "e.g. 5000000")}
-            {field("quotation_method", "Quotation Method", "autocomplete")}
-            {field("department", "Department", "autocomplete")}
-            {field("status", "Status", "autocomplete")}
-            {field("go_no_go_decision", "Go / No-Go Decision", "autocomplete")}
+            {field("quotation_method", "Quotation Method", "text")}
+            {field("department", "Department", "text")}
+            {field("status", "Status", "text")}
+            {field("go_no_go_decision", "Go / No-Go Decision", "text")}
           </>)}
 
           {section("Customer & Project", <>
             {field("company_name", "Company Name", "text", true, "e.g. Godrej Properties")}
             {field("type_of_customer", "Type of Customer", "text", false, "e.g. Contractor")}
-            {field("existing_new_customer", "Existing / New Customer", "autocomplete")}
+            {field("existing_new_customer", "Existing / New Customer", "text")}
             {field("sector", "Sector", "text", false, "e.g. Real Estate")}
-            {field("inbound_outbound", "Inbound / Outbound", "autocomplete")}
+            {field("inbound_outbound", "Inbound / Outbound", "text")}
           </>)}
 
           {section("Contact", <>
@@ -187,7 +195,7 @@ export default function EditModal({ record, mode, onClose, onSave }: Props) {
           {section("Timeline & Submission", <>
             {field("enquiry_received_date", "Enquiry Received Date", "date")}
             {field("proposal_sent_date", "Proposal Sent Date", "date")}
-            {field("mode_of_submission", "Mode of Submission", "autocomplete")}
+            {field("mode_of_submission", "Mode of Submission", "text")}
           </>)}
 
           {section("Notes", <>

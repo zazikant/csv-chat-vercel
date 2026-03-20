@@ -117,7 +117,7 @@ export default function Autocomplete({ column, value, onChange, placeholder, cla
         ref={inputRef}
         type="text"
         value={query}
-        onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
+        onChange={(e) => { const v = e.target.value; setQuery(v); onChange(v); setOpen(true); }}
         onFocus={() => setOpen(true)}
         onKeyDown={handleKeyDown}
         placeholder={loading ? "Loading..." : placeholder || "Type to search..."}

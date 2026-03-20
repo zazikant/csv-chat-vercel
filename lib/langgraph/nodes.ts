@@ -64,7 +64,7 @@ Return ONLY the single classification word, nothing else.`;
 
   const response = await llm.invoke(prompt);
   const raw = response.content.toString().trim().toLowerCase().split(/\s+/)[0];
-  const valid = ["filter", "count", "lookup", "aggregate", "reset", "unknown"];
+  const valid = ["filter", "count", "lookup", "aggregate", "sort", "reset", "unknown"];
   const intent = valid.includes(raw) ? raw : "unknown";
 
   console.log(`🎯 [IntentClassifier] Intent: ${intent}`);
@@ -207,6 +207,7 @@ export async function responseFormatterNode(
   const returnsRows =
     (state.queryIntent === "filter" ||
     state.queryIntent === "lookup" ||
+    state.queryIntent === "sort" ||
     state.queryIntent === "reset") &&
     Array.isArray(state.queryResult) &&
     state.queryResult.length > 0;
@@ -236,7 +237,7 @@ Write a short, friendly, conversational response (1–3 sentences).
   await saveMessage(state.sessionId, "user", state.userQuery);
   await saveMessage(state.sessionId, "assistant", final);
 
-  console.log("💬 [ResponseFormatter] Done.");
+  console.log("💬 [ResponseFormatter] Done. shouldUpdateTable:", returnsRows);
   return {
     finalResponse: final,
     shouldUpdateTable: returnsRows,
