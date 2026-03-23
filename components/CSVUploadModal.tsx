@@ -120,15 +120,17 @@ export default function CSVUploadModal({ onClose, onUpload }: Props) {
     const date = (v: string | undefined, key: keyof ContactRow) => {
       const trimmed = (v || "").trim();
       if (!trimmed) return;
-      const mdy = trimmed.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
-      if (mdy) {
-        const [, m, d, y] = mdy;
+      const slashParts = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+      if (slashParts) {
+        const [, a, b, y] = slashParts;
+        const [m, d] = parseInt(a) > 12 ? [b, a] : [a, b];
         data[key] = `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}` as never;
         return;
       }
-      const dmy = trimmed.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
-      if (dmy) {
-        const [, d, m, y] = dmy;
+      const dashParts = trimmed.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+      if (dashParts) {
+        const [, a, b, y] = dashParts;
+        const [m, d] = parseInt(a) > 12 ? [b, a] : [a, b];
         data[key] = `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}` as never;
         return;
       }
