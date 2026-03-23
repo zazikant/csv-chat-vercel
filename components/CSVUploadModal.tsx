@@ -162,30 +162,43 @@ export default function CSVUploadModal({ onClose, onUpload }: Props) {
   }
 
   function parseCSV(text: string): ParsedRow[] {
-    const lines = text.split(/\r?\n/).filter((l) => l.trim());
+    const lines = parseCSVLines(text);
     if (lines.length < 2) return [];
 
-    const headerLine = lines[0];
-    const rawHeaders = parseCSVLine(headerLine);
-    const headers = rawHeaders.map((h) => h.toLowerCase().trim().replace(/\s*\([^)]*\)/g, "").replace(/\//g, "_").replace(/-/g, "_"));
+    const rawHeaders = lines[0];
+    const headers = rawHeaders.map((h) => h.toLowerCase().trim().replace(/\s*\([^)]*\)/g, "").replace(/\//g, "_").replace(/-/g, "_").replace(/\s+/g, "_"));
 
     const fieldKeyMap: Record<string, keyof ContactRow> = {
       proposal_number: "proposal_number",
+      project_name: "project_name",
+      name: "name",
+      contact_name: "name",
+      email: "email",
+      phone: "phone_number",
+      phone_number: "phone_number",
+      designation: "designation",
+      company_name: "company_name",
+      type_of_customer: "type_of_customer",
+      existing_new_customer: "existing_new_customer",
+      sector: "sector",
+      city: "city",
+      status: "status",
+      department: "department",
+      go_no_go_decision: "go_no_go_decision",
+      inbound_outbound: "inbound_outbound",
       proposal_enquiry_for: "proposal_enquiry_for",
+      quotation_method: "quotation_method",
+      proposal_value: "proposal_value_inr",
       proposal_value_inr: "proposal_value_inr",
       enquiry_received_date: "enquiry_received_date",
       proposal_sent_date: "proposal_sent_date",
-      go_no_go_decision: "go_no_go_decision",
       mode_of_submission: "mode_of_submission",
-      existing_new_customer: "existing_new_customer",
-      type_of_customer: "type_of_customer",
-      inbound_outbound: "inbound_outbound",
-      quotation_method: "quotation_method",
+      remarks: "remarks",
     };
 
     const result: ParsedRow[] = [];
     for (let i = 1; i < lines.length; i++) {
-      const values = parseCSVLine(lines[i]);
+      const values = lines[i];
       const row: Record<string, string> = {};
       let hasData = false;
       headers.forEach((h, idx) => {
@@ -195,26 +208,51 @@ export default function CSVUploadModal({ onClose, onUpload }: Props) {
       });
       if (hasData) result.push(validateRow(i, row));
     }
+    console.log("Parsed CSV - headers:", headers);
+    console.log("Parsed CSV - first row mapped:", result[0]?.data);
     return result;
   }
 
-  function parseCSVLine(line: string): string[] {
-    const result: string[] = [];
-    let current = "";
+  function parseCSVLines(text: string): string[][] {
+    const result: string[][] = [];
+    let currentRow: string[] = [];
+    let currentCell = "";
     let inQuotes = false;
-    for (let i = 0; i < line.length; i++) {
-      const ch = line[i];
+    
+    for (let i = 0; i < text.length; i++) {
+      const ch = text[i];
+      const nextCh = text[i + 1];
+      
       if (ch === '"') {
-        if (inQuotes && line[i + 1] === '"') { current += '"'; i++; }
-        else inQuotes = !inQuotes;
-      } else if (ch === "," && !inQuotes) {
-        result.push(current);
-        current = "";
-      } else {
-        current += ch;
+        if (inQuotes && nextCh === '"') {
+          currentCell += '"';
+          i++;
+        } else {
+          inQuotes = !inQuotes;
+        }
+      } else if (ch === ',' && !inQuotes) {
+        currentRow.push(currentCell.trim());
+        currentCell = "";
+      } else if ((ch === '\n' || ch === '\r') && !inQuotes) {
+        if (ch === '\r' && nextCh === '\n') {
+          i++;
+        }
+        currentRow.push(currentCell.trim());
+        if (currentRow.some(c => c !== "")) {
+          result.push(currentRow);
+        }
+        currentRow = [];
+        currentCell = "";
+      } else if (ch !== '\r') {
+        currentCell += ch;
       }
     }
-    result.push(current);
+    
+    if (currentCell.trim() || currentRow.length > 0) {
+      currentRow.push(currentCell.trim());
+      result.push(currentRow);
+    }
+    
     return result;
   }
 
@@ -241,18 +279,22 @@ export default function CSVUploadModal({ onClose, onUpload }: Props) {
     setUploading(true);
     setUploadError("");
     try {
+      const payload = { rows: validRows.map((r) => r.data) };
+      console.log("Uploading rows:", JSON.stringify(payload, null, 2));
       const res = await fetch("/api/contacts/bulk", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rows: validRows.map((r) => r.data) }),
+        body: JSON.stringify(payload),
       });
+      const responseData = await res.json();
+      console.log("Upload response:", responseData);
       if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "Upload failed");
+        throw new Error(responseData.error || "Upload failed");
       }
       onUpload();
       onClose();
     } catch (err) {
+      console.error("Upload error:", err);
       setUploadError(err instanceof Error ? err.message : "Upload failed");
     } finally {
       setUploading(false);
@@ -372,7 +414,7 @@ export default function CSVUploadModal({ onClose, onUpload }: Props) {
                     <tr>
                       <th className="text-left text-gray-400 font-medium px-2 py-2 w-8">#</th>
                       <th className="text-left text-gray-400 font-medium px-2 py-2 w-20">Status</th>
-                      {TEMPLATE_HEADERS.slice(0, 8).map((h) => (
+                      {TEMPLATE_HEADERS.map((h) => (
                         <th key={h} className="text-left text-gray-400 font-medium px-2 py-2 whitespace-nowrap">
                           {FIELD_LABELS[h]}
                         </th>
@@ -398,7 +440,7 @@ export default function CSVUploadModal({ onClose, onUpload }: Props) {
                             </span>
                           )}
                         </td>
-                        {TEMPLATE_HEADERS.slice(0, 8).map((h) => {
+                        {TEMPLATE_HEADERS.map((h) => {
                           const val = pr.data[h as keyof ContactRow];
                           return (
                             <td key={h} className="px-2 py-2 text-gray-600 max-w-[150px] truncate" title={String(val ?? "")}>
