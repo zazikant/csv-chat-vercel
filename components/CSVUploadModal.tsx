@@ -152,7 +152,7 @@ export default function CSVUploadModal({ onClose, onUpload }: Props) {
     str(row.inbound_outbound, "inbound_outbound");
     str(row.proposal_enquiry_for, "proposal_enquiry_for");
     str(row.quotation_method, "quotation_method");
-    num(row.proposal_value_inr, "proposal_value_inr");
+    str(row.proposal_value_inr, "proposal_value_inr");
     date(row.enquiry_received_date, "enquiry_received_date");
     date(row.proposal_sent_date, "proposal_sent_date");
     str(row.mode_of_submission, "mode_of_submission");
