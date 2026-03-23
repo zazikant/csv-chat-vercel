@@ -37,15 +37,6 @@ const FIELD_LABELS: Record<string, string> = {
   remarks: "Remarks",
 };
 
-const VALID_STATUS = ["Open", "Won", "Loss", "Closed"];
-const VALID_DEPT = ["PMC", "QC", "Rebar", "Design Engineering", "Structural", "Electrical", "Mechanical", "Architectural"];
-const VALID_GNGO = ["Approved", "Not Approved", "Pending"];
-const VALID_IO = ["Inbound", "Outbound"];
-const VALID_EXNEW = ["Existing", "New"];
-const VALID_QM = ["Lump Sum", "Man-Months", "Per Day Fee", "Per Hour Fee", "Item Rate", "Turnkey"];
-const VALID_MOS = ["Email", "Hard Copy", "Ariba Portal", "Courier", "Portal", "In Person"];
-const VALID_TOC = ["Consultant", "Contractor", "Developer", "Manufacturer"];
-
 interface ParsedRow {
   rowIndex: number;
   data: Partial<ContactRow>;
@@ -128,24 +119,20 @@ export default function CSVUploadModal({ onClose, onUpload }: Props) {
     };
     const date = (v: string | undefined, key: keyof ContactRow) => {
       const trimmed = (v || "").trim();
-      if (trimmed) {
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
-          errors.push(`${FIELD_LABELS[key]}: "${trimmed}" must be YYYY-MM-DD`);
-        } else {
-          data[key] = trimmed as never;
-        }
+      if (!trimmed) return;
+      const mdy = trimmed.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+      if (mdy) {
+        const [, m, d, y] = mdy;
+        data[key] = `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}` as never;
+        return;
+      }
+      const dmy = trimmed.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+      if (dmy) {
+        const [, d, m, y] = dmy;
+        data[key] = `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}` as never;
+        return;
       }
     };
-    const enum_ = (v: string | undefined, key: keyof ContactRow, valid: string[]) => {
-      const trimmed = (v || "").trim();
-      if (trimmed && !valid.map((s) => s.toLowerCase()).includes(trimmed.toLowerCase())) {
-        errors.push(`${FIELD_LABELS[key]}: "${trimmed}" — valid: ${valid.join(", ")}`);
-      } else if (trimmed) {
-        const matched = valid.find((s) => s.toLowerCase() === trimmed.toLowerCase());
-        data[key] = matched as never;
-      }
-    };
-
     str(row.proposal_number, "proposal_number");
     str(row.project_name, "project_name");
     str(row.name, "name");
@@ -153,20 +140,20 @@ export default function CSVUploadModal({ onClose, onUpload }: Props) {
     str(row.phone_number, "phone_number");
     str(row.designation, "designation");
     str(row.company_name, "company_name");
-    enum_(row.type_of_customer, "type_of_customer", VALID_TOC);
-    enum_(row.existing_new_customer, "existing_new_customer", VALID_EXNEW);
+    str(row.type_of_customer, "type_of_customer");
+    str(row.existing_new_customer, "existing_new_customer");
     str(row.sector, "sector");
     str(row.city, "city");
-    enum_(row.status, "status", VALID_STATUS);
-    enum_(row.department, "department", VALID_DEPT);
-    enum_(row.go_no_go_decision, "go_no_go_decision", VALID_GNGO);
-    enum_(row.inbound_outbound, "inbound_outbound", VALID_IO);
+    str(row.status, "status");
+    str(row.department, "department");
+    str(row.go_no_go_decision, "go_no_go_decision");
+    str(row.inbound_outbound, "inbound_outbound");
     str(row.proposal_enquiry_for, "proposal_enquiry_for");
-    enum_(row.quotation_method, "quotation_method", VALID_QM);
+    str(row.quotation_method, "quotation_method");
     num(row.proposal_value_inr, "proposal_value_inr");
     date(row.enquiry_received_date, "enquiry_received_date");
     date(row.proposal_sent_date, "proposal_sent_date");
-    enum_(row.mode_of_submission, "mode_of_submission", VALID_MOS);
+    str(row.mode_of_submission, "mode_of_submission");
     str(row.remarks, "remarks");
 
     return { rowIndex: index, data, errors };
@@ -348,7 +335,7 @@ export default function CSVUploadModal({ onClose, onUpload }: Props) {
             <div className="px-6 py-4 border-t border-gray-100 bg-gray-50">
               <p className="text-xs text-gray-400">
                 Template includes all 22 fields. Use <strong>field labels from header row</strong> (case-insensitive).
-                Dates must be YYYY-MM-DD. Enum fields: {VALID_STATUS.join(", ")} | {VALID_DEPT.join(", ")} | {VALID_GNGO.join(", ")} | {VALID_IO.join(", ")} | {VALID_EXNEW.join(", ")} | {VALID_QM.join(", ")} | {VALID_MOS.join(", ")} | {VALID_TOC.join(", ")}
+                Dates must be YYYY-MM-DD. All text fields accept any value.
               </p>
             </div>
           </div>
