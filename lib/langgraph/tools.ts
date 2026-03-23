@@ -18,7 +18,7 @@ Columns:
   - mode_of_submission    (text)         -- Email, Hard Copy, Ariba Portal, etc.
   - proposal_enquiry_for  (text)         -- Service/scope offered by GEM Engserv
   - project_name          (text)
-  - proposal_value_inr    (bigint)
+  - proposal_value_inr    (numeric)
   - quotation_method      (text)         -- Lump Sum, Man-Months, Per Day Fee, etc.
   - department            (text)         -- PMC, QC, Rebar, Design Engineering, etc.
   - status                (text)         -- Won, Loss, Open, Closed

@@ -111,10 +111,11 @@ export default function CSVUploadModal({ onClose, onUpload }: Props) {
     };
     const num = (v: string | undefined, key: keyof ContactRow) => {
       const trimmed = (v || "").trim();
-      if (trimmed) {
-        const n = Number(trimmed.replace(/,/g, ""));
-        if (isNaN(n)) errors.push(`${FIELD_LABELS[key]}: "${trimmed}" is not a valid number`);
-        else data[key] = n as never;
+      if (!trimmed || trimmed === "-") return;
+      const cleaned = trimmed.replace(/[^\d.]/g, "");
+      const n = parseFloat(cleaned);
+      if (!isNaN(n) && cleaned.length > 0) {
+        (data as Record<string, unknown>)[key] = n;
       }
     };
     const date = (v: string | undefined, key: keyof ContactRow) => {
@@ -152,7 +153,8 @@ export default function CSVUploadModal({ onClose, onUpload }: Props) {
     str(row.inbound_outbound, "inbound_outbound");
     str(row.proposal_enquiry_for, "proposal_enquiry_for");
     str(row.quotation_method, "quotation_method");
-    str(row.proposal_value_inr, "proposal_value_inr");
+    num(row.proposal_value_inr, "proposal_value_inr");
+    console.log("validateRow proposal_value_inr:", row.proposal_value_inr, "-> data:", data.proposal_value_inr);
     date(row.enquiry_received_date, "enquiry_received_date");
     date(row.proposal_sent_date, "proposal_sent_date");
     str(row.mode_of_submission, "mode_of_submission");
