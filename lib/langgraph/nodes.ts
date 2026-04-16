@@ -86,46 +86,20 @@ export async function sqlGeneratorNode(
     .map((m) => `${m.role.toUpperCase()}: ${m.content}`)
     .join("\n") || "None";
 
-  const prompt = `You are a PostgreSQL expert. Generate a SQL SELECT query to answer the user's question.
+  const prompt = `Generate a SQL SELECT query to answer: "${state.userQuery}"
 
-Table schema:
-${state.tableSchema}
-
-Current UI state:
-- ${state.currentRows.length} rows currently visible in the table
-${state.currentRows.length > 0 ? `- Currently showing records with IDs: ${state.currentRows.slice(0, 10).map(r => r.id).join(", ")}${state.currentRows.length > 10 ? "..." : ""}
-- If the user asks about the currently visible data (counts, aggregates, etc.), filter to these IDs only` : "- Table is empty or unfiltered - query the full database"}
-
-Conversation history (use for follow-up context like "those", "them", "same filter"):
-${historyText}
-
-Current query: "${state.userQuery}"
-Intent: ${state.queryIntent}
+Table: contacts (use ILIKE for case-insensitive text comparisons)
 
 Rules:
-1. Return ONLY a valid SQL SELECT statement — no markdown, no backticks, no explanation.
-2. Always query from table "contacts" (never prefix with schema like "public.").
-3. Use ILIKE for case-insensitive text comparisons (e.g. WHERE city ILIKE 'mumbai').
-4. For "reset" or "show all" intent: return SELECT * FROM contacts ORDER BY id;
-5. For "filter" and "lookup" intents: ALWAYS use SELECT * FROM contacts (never select specific columns), then add WHERE and ORDER BY as needed.
-6. For count queries on CURRENTLY VISIBLE data: filter to the visible IDs using "WHERE id IN (id1, id2, ...)"
-7. For count queries: ALWAYS use "SELECT * FROM contacts" (not COUNT) - the count will be communicated in the response. The table should display the actual matching records.
-8. For aggregate queries: use GROUP BY appropriately.
-9. For sort intent: SELECT * FROM contacts ORDER BY the relevant column.
-10. For proposal_value_inr, treat nulls as 0 in COALESCE for SUM/AVG.
-11. Always end with a semicolon.
+1. ALWAYS use "SELECT * FROM contacts" — never SELECT COUNT, never specific columns
+2. Add WHERE clauses for filters, ORDER BY for sorting
+3. End with semicolon
 
 Examples:
-SELECT * FROM contacts WHERE city ILIKE 'mumbai' ORDER BY id;
-SELECT * FROM contacts WHERE status ILIKE 'won' ORDER BY id;
-SELECT * FROM contacts WHERE department ILIKE '%design%' ORDER BY proposal_value_inr DESC;
-SELECT department, COUNT(*) as total, SUM(COALESCE(proposal_value_inr,0)) as total_value FROM contacts GROUP BY department ORDER BY total_value DESC;
-SELECT status, COUNT(*) as count FROM contacts GROUP BY status ORDER BY count DESC;
-SELECT * FROM contacts WHERE enquiry_received_date >= '2024-01-01' ORDER BY proposal_value_inr DESC;
-SELECT type_of_customer, COUNT(*) as total FROM contacts GROUP BY type_of_customer ORDER BY total DESC;
-SELECT * FROM contacts WHERE status ILIKE '%' ORDER BY enquiry_received_date DESC;
-
-IMPORTANT: When user asks "How many won?" or similar count questions, always use SELECT * FROM contacts with the appropriate WHERE clause to return actual rows. The response message will communicate the count. Example: SELECT * FROM contacts WHERE status ILIKE 'won';`;
+- How many won? → SELECT * FROM contacts WHERE status ILIKE 'won' ORDER BY id;
+- Show open proposals → SELECT * FROM contacts WHERE status ILIKE 'open' ORDER BY id;
+- Show all → SELECT * FROM contacts ORDER BY id;
+- Sort by value → SELECT * FROM contacts ORDER BY proposal_value_inr DESC;`;
 
   const response = await llm.invoke(prompt);
   const sql = response.content
