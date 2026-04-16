@@ -62,7 +62,7 @@ export default function ChatPanel({ sessionId, currentRows, onTableUpdate }: Pro
           llmProvider: settings.provider,
           apiKey: settings.apiKey,
           model: settings.model,
-          currentRows,
+          currentRows: [],
         }),
       });
 
