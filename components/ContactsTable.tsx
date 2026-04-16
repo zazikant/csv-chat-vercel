@@ -10,7 +10,7 @@ const ALL_COLUMNS: { key: keyof ContactRow; label: string }[] = [
   { key: "status",                label: "Status" },
   { key: "department",            label: "Dept" },
   { key: "proposal_value_inr",    label: "Value (₹)" },
-  { key: "proposal_enquiry_for",  label: "For" },
+  { key: "proposal_enquiry_for",  label: "Service/Scope" },
   { key: "enquiry_received_date", label: "Enquiry Date" },
   { key: "proposal_sent_date",    label: "Sent Date" },
   { key: "name",                   label: "Contact" },
@@ -39,6 +39,14 @@ const VISIBLE_COLUMNS = [
 
 const PAGE_SIZE = 25;
 
+const SEARCHABLE_COLUMNS: (keyof ContactRow)[] = [
+  "proposal_number", "project_name", "company_name", "name", "email",
+  "phone_number", "city", "designation", "status", "department",
+  "go_no_go_decision", "inbound_outbound", "existing_new_customer",
+  "type_of_customer", "sector", "quotation_method", "mode_of_submission",
+  "remarks", "proposal_enquiry_for",
+];
+
 interface Props {
   rows: ContactRow[];
   isFiltered: boolean;
@@ -55,9 +63,20 @@ export default function ContactsTable({
   rows, isFiltered, page, onPageChange, onReset, onEdit, onAdd, onUpload, onDeleteRows,
 }: Props) {
   const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [searchTerm, setSearchTerm] = useState("");
 
-  const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
-  const paginated  = rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const filteredRows = searchTerm.trim()
+    ? rows.filter((row) =>
+        SEARCHABLE_COLUMNS.some((col) => {
+          const val = row[col];
+          if (val === null || val === undefined) return false;
+          return String(val).toLowerCase().includes(searchTerm.toLowerCase());
+        })
+      )
+    : rows;
+
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
+  const paginated  = filteredRows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const visibleCols = ALL_COLUMNS.filter((c) => VISIBLE_COLUMNS.includes(c.key as string));
 
   const allOnPage = paginated.map((r) => r.id);
@@ -153,7 +172,8 @@ export default function ContactsTable({
         <div className="flex items-center gap-2">
           <h2 className="text-sm font-semibold text-gray-700">Proposals</h2>
           <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">
-            {rows.length} {rows.length === 1 ? "record" : "records"}
+            {filteredRows.length} {filteredRows.length === 1 ? "record" : "records"}
+            {searchTerm && ` (${rows.length} total)`}
           </span>
           {isFiltered && (
             <span className="text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full">filtered</span>
@@ -170,6 +190,23 @@ export default function ContactsTable({
               Show all
             </button>
           )}
+          {searchTerm && (
+            <button onClick={() => setSearchTerm("")} className="px-3 py-1.5 text-xs text-orange-500 hover:text-orange-700 hover:bg-orange-50 rounded-lg transition-colors">
+              Clear search
+            </button>
+          )}
+          <div className="relative">
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => { setSearchTerm(e.target.value); onPageChange(1); }}
+              placeholder="Search all fields..."
+              className="w-48 pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-100 focus:border-blue-300 placeholder-gray-400"
+            />
+            <svg className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+          </div>
           <button onClick={downloadCSV} className="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors flex items-center gap-1.5">
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
@@ -200,9 +237,9 @@ export default function ContactsTable({
       </div>
 
       <div className="flex-1 overflow-auto">
-        {rows.length === 0 ? (
+        {filteredRows.length === 0 ? (
           <div className="flex items-center justify-center h-full text-sm text-gray-400">
-            No records match your query.
+            {searchTerm ? "No records match your search." : "No records match your query."}
           </div>
         ) : (
           <table className="w-full text-sm border-collapse">
