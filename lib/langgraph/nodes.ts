@@ -196,7 +196,9 @@ export async function responseFormatterNode(
     (state.queryIntent === "filter" ||
     state.queryIntent === "lookup" ||
     state.queryIntent === "sort" ||
-    state.queryIntent === "reset") &&
+    state.queryIntent === "reset" ||
+    state.queryIntent === "count" ||
+    state.queryIntent === "aggregate") &&
     Array.isArray(state.queryResult) &&
     state.queryResult.length > 0;
 
