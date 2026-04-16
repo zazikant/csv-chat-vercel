@@ -226,7 +226,7 @@ export async function responseFormatterNode(
     Array.isArray(state.queryResult) &&
     state.queryResult.length > 0;
 
-  const shouldUpdateTable = returnsRows && !["count", "aggregate"].includes(state.queryIntent);
+  const shouldUpdateTable = returnsRows;
 
   const resultSummary =
     state.queryResult && state.queryResult.length > 0
