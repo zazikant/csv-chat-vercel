@@ -100,7 +100,7 @@ export default function EditModal({ record, mode, onClose, onSave }: Props) {
           type="number"
           value={(form[key] as number) ?? ""}
           onChange={(e) => setVal(key, e.target.value ? Number(e.target.value) : null)}
-          className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300"
+          className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300 placeholder-gray-500"
           placeholder={placeholder}
         />
       ) : type === "email" ? (
@@ -108,7 +108,7 @@ export default function EditModal({ record, mode, onClose, onSave }: Props) {
           type="email"
           value={(form[key] as string) || ""}
           onChange={(e) => setVal(key, e.target.value)}
-          className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300 placeholder-gray-600"
+          className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300 placeholder-gray-500"
           placeholder={placeholder}
         />
       ) : type === "textarea" ? (
@@ -117,15 +117,14 @@ export default function EditModal({ record, mode, onClose, onSave }: Props) {
           onChange={(e) => setVal(key, e.target.value)}
           rows={3}
           placeholder={placeholder}
-          className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300 resize-none"
+          className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300 resize-none placeholder-gray-500"
         />
       ) : type === "date" ? (
         <input
           type="date"
           value={(form[key] as string) || ""}
           onChange={(e) => setVal(key, e.target.value)}
-          className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300"
-        />
+          className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300 placeholder-gray-500"
       ) : (
         <FieldSuggest
           column={key}

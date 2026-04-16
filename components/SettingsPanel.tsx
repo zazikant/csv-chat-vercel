@@ -102,7 +102,7 @@ export default function SettingsPanel({ settings, onSettingsChange }: Props) {
                 value={settings.apiKey}
                 onChange={(e) => handleApiKeyChange(e.target.value)}
                 placeholder={settings.provider === "openrouter" ? "sk-or-v1-..." : "nvapi-..."}
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300"
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300 placeholder-gray-500"
               />
               <p className="text-xs text-gray-400 mt-1">
                 {settings.provider === "openrouter" 

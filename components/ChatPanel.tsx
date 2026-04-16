@@ -192,8 +192,8 @@ export default function ChatPanel({ sessionId, currentRows, onTableUpdate }: Pro
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Ask about your proposals..."
-            className="flex-1 text-sm outline-none text-gray-700 placeholder-gray-600 bg-transparent"
+placeholder="Ask about your proposals..."
+              className="flex-1 text-sm outline-none text-gray-700 placeholder-gray-500 bg-transparent"
             disabled={loading}
           />
           <button
