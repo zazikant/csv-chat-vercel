@@ -18,10 +18,11 @@ interface Settings {
 
 interface Props {
   sessionId: string;
+  currentRows: ContactRow[];
   onTableUpdate: (rows: ContactRow[]) => void;
 }
 
-export default function ChatPanel({ sessionId, onTableUpdate }: Props) {
+export default function ChatPanel({ sessionId, currentRows, onTableUpdate }: Props) {
   const [messages, setMessages]   = useState<ChatMessage[]>([
     {
       role: "assistant",
@@ -61,6 +62,7 @@ export default function ChatPanel({ sessionId, onTableUpdate }: Props) {
           llmProvider: settings.provider,
           apiKey: settings.apiKey,
           model: settings.model,
+          currentRows,
         }),
       });
 

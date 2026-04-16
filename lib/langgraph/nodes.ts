@@ -46,6 +46,10 @@ export async function intentClassifierNode(
 Schema:
 ${state.tableSchema}
 
+Current UI state:
+- ${state.currentRows.length} rows currently visible in the table
+${state.currentRows.length > 0 ? `- Currently showing records with IDs: ${state.currentRows.slice(0, 10).map(r => r.id).join(", ")}${state.currentRows.length > 10 ? "..." : ""}` : "- Table is empty or unfiltered"}
+
 Conversation history:
 ${historyText}
 
@@ -59,6 +63,8 @@ Classify as exactly ONE of:
 - sort        → user wants results sorted by a field (value, date, etc.)
 - reset       → user wants to see all proposals again (e.g. "show all", "reset", "clear filter")
 - unknown     → query cannot be answered from this data
+
+IMPORTANT: If user asks a question about counts or aggregates while data is filtered, they likely want the count from the CURRENTLY VISIBLE data, not the full database. Return "filter" intent in such cases.
 
 Return ONLY the single classification word, nothing else.`;
 
@@ -85,6 +91,11 @@ export async function sqlGeneratorNode(
 Table schema:
 ${state.tableSchema}
 
+Current UI state:
+- ${state.currentRows.length} rows currently visible in the table
+${state.currentRows.length > 0 ? `- Currently showing records with IDs: ${state.currentRows.slice(0, 10).map(r => r.id).join(", ")}${state.currentRows.length > 10 ? "..." : ""}
+- If the user asks about the currently visible data (counts, aggregates, etc.), filter to these IDs only` : "- Table is empty or unfiltered - query the full database"}
+
 Conversation history (use for follow-up context like "those", "them", "same filter"):
 ${historyText}
 
@@ -97,11 +108,12 @@ Rules:
 3. Use ILIKE for case-insensitive text comparisons (e.g. WHERE city ILIKE 'mumbai').
 4. For "reset" or "show all" intent: return SELECT * FROM contacts ORDER BY id;
 5. For "filter" and "lookup" intents: ALWAYS use SELECT * FROM contacts (never select specific columns), then add WHERE and ORDER BY as needed.
-6. For count queries: return SELECT COUNT(*) as count FROM contacts WHERE ...;
-7. For aggregate queries: use GROUP BY appropriately.
-8. For sort intent: SELECT * FROM contacts ORDER BY the relevant column.
-9. For proposal_value_inr, treat nulls as 0 in COALESCE for SUM/AVG.
-10. Always end with a semicolon.
+6. For count queries on CURRENTLY VISIBLE data: filter to the visible IDs using "WHERE id IN (id1, id2, ...)"
+7. For count queries on full database (no current filter context): SELECT COUNT(*) as count FROM contacts WHERE ...;
+8. For aggregate queries: use GROUP BY appropriately.
+9. For sort intent: SELECT * FROM contacts ORDER BY the relevant column.
+10. For proposal_value_inr, treat nulls as 0 in COALESCE for SUM/AVG.
+11. Always end with a semicolon.
 
 Examples:
 SELECT * FROM contacts WHERE city ILIKE 'mumbai' ORDER BY id;
@@ -111,7 +123,9 @@ SELECT department, COUNT(*) as total, SUM(COALESCE(proposal_value_inr,0)) as tot
 SELECT status, COUNT(*) as count FROM contacts GROUP BY status ORDER BY count DESC;
 SELECT * FROM contacts WHERE enquiry_received_date >= '2024-01-01' ORDER BY proposal_value_inr DESC;
 SELECT type_of_customer, COUNT(*) as total FROM contacts GROUP BY type_of_customer ORDER BY total DESC;
-SELECT * FROM contacts WHERE status ILIKE '%' ORDER BY enquiry_received_date DESC;`;
+SELECT * FROM contacts WHERE status ILIKE '%' ORDER BY enquiry_received_date DESC;
+
+IMPORTANT: When user asks "How many won?" or similar count questions while data is filtered, filter to currently visible IDs: SELECT COUNT(*) as count FROM contacts WHERE id IN (${state.currentRows.length > 0 ? state.currentRows.map(r => r.id).join(",") : "SELECT id FROM contacts WHERE 1=0"});`;
 
   const response = await llm.invoke(prompt);
   const sql = response.content
@@ -224,9 +238,13 @@ SQL that was run: ${state.generatedSQL}
 Result summary: ${resultSummary}
 Full result: ${JSON.stringify(state.queryResult?.slice(0, 5), null, 2)}
 
+Current UI state:
+- ${state.currentRows.length} rows currently visible in the table
+${state.currentRows.length > 0 ? `- Currently showing records with IDs: ${state.currentRows.slice(0, 10).map(r => r.id).join(", ")}${state.currentRows.length > 10 ? "..." : ""}` : "- Table is empty or unfiltered"}
+
 Write a short, friendly, conversational response (1–3 sentences).
 - For filters: mention how many results were found and what filter was applied.
-- For counts: state the number clearly.
+- For counts: state the number clearly and whether it's from visible data or full database.
 - For aggregates: summarise the key insight.
 - For reset: confirm the full list is showing.
 - Do NOT list all the data — the table on screen already shows it.`;

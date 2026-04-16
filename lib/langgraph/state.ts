@@ -79,6 +79,9 @@ export const QueryGraphState = Annotation.Root({
   model: Annotation<string>({
     reducer: (_, next) => next,
   }),
+  currentRows: Annotation<ContactRow[]>({
+    reducer: (_, next) => next,
+  }),
 });
 
 export type QueryGraphStateType = typeof QueryGraphState.State;

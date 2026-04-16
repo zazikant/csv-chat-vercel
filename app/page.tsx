@@ -96,6 +96,7 @@ export default function HomePage() {
       <div className="w-[400px] flex-shrink-0 flex flex-col overflow-hidden shadow-lg">
         <ChatPanel
           sessionId={sessionId}
+          currentRows={rows}
           onTableUpdate={handleTableUpdate}
         />
       </div>

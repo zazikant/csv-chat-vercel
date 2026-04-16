@@ -7,7 +7,7 @@ export const maxDuration = 120;
 
 export async function POST(req: NextRequest) {
   try {
-    const { userQuery, sessionId, llmProvider, apiKey, model } = await req.json();
+    const { userQuery, sessionId, llmProvider, apiKey, model, currentRows } = await req.json();
 
     if (!userQuery?.trim() || !sessionId) {
       return NextResponse.json(
@@ -33,6 +33,7 @@ export async function POST(req: NextRequest) {
       llmProvider: llmProvider || "openrouter",
       apiKey: apiKey || "",
       model: model || "",
+      currentRows: currentRows || [],
     });
 
     return NextResponse.json({
