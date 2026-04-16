@@ -6,28 +6,28 @@ export function getTableSchema(): string {
 Table name: contacts
 Columns:
   - id                    (bigint, primary key, auto)
-  - name                  (text)
-  - email                 (text)
-  - company_name          (text)
-  - phone_number          (text)
-  - city                  (text)
-  - designation           (text)
-  - enquiry_received_date (date)
-  - go_no_go_decision     (text)         -- Approved / Not Approved / Pending
-  - proposal_sent_date    (date)
-  - mode_of_submission    (text)         -- Email, Hard Copy, Ariba Portal, etc.
-  - proposal_enquiry_for  (text)         -- Service/scope offered by GEM Engserv
-  - project_name          (text)
-  - proposal_value_inr    (numeric)
-  - quotation_method      (text)         -- Lump Sum, Man-Months, Per Day Fee, etc.
-  - department            (text)         -- PMC, QC, Rebar, Design Engineering, etc.
-  - status                (text)         -- Won, Loss, Open, Closed
-  - inbound_outbound      (text)         -- Inbound (received) / Outbound (proactive)
-  - existing_new_customer (text)         -- Existing / New
-  - remarks               (text)
-  - type_of_customer      (text)         -- Consultant, Contractor, Developer, Manufacturer
-  - sector                (text)         -- FMCG, Industrial, Real Estate, Warehousing, etc.
-  - proposal_number       (text)
+  - name                  (text)           -- Contact person name
+  - email                 (text)           -- Contact email address
+  - company_name          (text)           -- Client company name
+  - phone_number          (text)           -- Contact phone number
+  - city                  (text)           -- City location of the project/company
+  - designation           (text)           -- Contact person's job title
+  - enquiry_received_date (date)           -- Date the enquiry was received
+  - go_no_go_decision     (text)           -- Go/No-Go decision: Approved / Not Approved / Pending
+  - proposal_sent_date    (date)           -- Date the proposal was sent to client
+  - mode_of_submission    (text)           -- How proposal was submitted: Email / Hard Copy / Ariba Portal / etc.
+  - proposal_enquiry_for  (text)           -- Service/scope being offered by GEM Engserv
+  - project_name          (text)          -- Name/title of the project
+  - proposal_value_inr    (numeric)        -- Proposal value in Indian Rupees (₹)
+  - quotation_method      (text)           -- Pricing model: Lump Sum / Man-Months / Per Day Fee / Percentage / etc.
+  - department            (text)           -- Department: PMC / QC / Rebar / Design Engineering / EAS / TA / etc.
+  - status                (text)           -- Proposal status: Won / Loss / Open / Closed
+  - inbound_outbound      (text)           -- Lead source: Inbound (enquiry received) / Outbound (proactive outreach)
+  - existing_new_customer (text)           -- Customer type: Existing / New
+  - remarks               (text)           -- Additional notes/comments
+  - type_of_customer      (text)           -- Customer category: Consultant / Contractor / Developer / Manufacturer / etc.
+  - sector                (text)           -- Industry sector: FMCG / Industrial / Real Estate / Warehousing / etc.
+  - proposal_number       (text)           -- GEM proposal/reference number (e.g., GEM/001/2025-26/R0)
 `.trim();
 }
 
