@@ -113,7 +113,7 @@ export default function ContactsTable({
 
   function downloadCSV() {
     const headers = ALL_COLUMNS.map((c) => c.label);
-    const rows_data = rows.map((row) =>
+    const rows_data = filteredRows.map((row) =>
       ALL_COLUMNS.map((c) => {
         const val = row[c.key];
         if (val === null || val === undefined) return "";
