@@ -109,7 +109,7 @@ Rules:
 4. For "reset" or "show all" intent: return SELECT * FROM contacts ORDER BY id;
 5. For "filter" and "lookup" intents: ALWAYS use SELECT * FROM contacts (never select specific columns), then add WHERE and ORDER BY as needed.
 6. For count queries on CURRENTLY VISIBLE data: filter to the visible IDs using "WHERE id IN (id1, id2, ...)"
-7. For count queries on full database (no current filter context): SELECT COUNT(*) as count FROM contacts WHERE ...;
+7. For count queries: ALWAYS use "SELECT * FROM contacts" (not COUNT) - the count will be communicated in the response. The table should display the actual matching records.
 8. For aggregate queries: use GROUP BY appropriately.
 9. For sort intent: SELECT * FROM contacts ORDER BY the relevant column.
 10. For proposal_value_inr, treat nulls as 0 in COALESCE for SUM/AVG.
@@ -117,7 +117,7 @@ Rules:
 
 Examples:
 SELECT * FROM contacts WHERE city ILIKE 'mumbai' ORDER BY id;
-SELECT COUNT(*) as count FROM contacts WHERE status ILIKE 'won';
+SELECT * FROM contacts WHERE status ILIKE 'won' ORDER BY id;
 SELECT * FROM contacts WHERE department ILIKE '%design%' ORDER BY proposal_value_inr DESC;
 SELECT department, COUNT(*) as total, SUM(COALESCE(proposal_value_inr,0)) as total_value FROM contacts GROUP BY department ORDER BY total_value DESC;
 SELECT status, COUNT(*) as count FROM contacts GROUP BY status ORDER BY count DESC;
@@ -125,7 +125,7 @@ SELECT * FROM contacts WHERE enquiry_received_date >= '2024-01-01' ORDER BY prop
 SELECT type_of_customer, COUNT(*) as total FROM contacts GROUP BY type_of_customer ORDER BY total DESC;
 SELECT * FROM contacts WHERE status ILIKE '%' ORDER BY enquiry_received_date DESC;
 
-IMPORTANT: When user asks "How many won?" or similar count questions while data is filtered, filter to currently visible IDs: SELECT COUNT(*) as count FROM contacts WHERE id IN (${state.currentRows.length > 0 ? state.currentRows.map(r => r.id).join(",") : "SELECT id FROM contacts WHERE 1=0"});`;
+IMPORTANT: When user asks "How many won?" or similar count questions, always use SELECT * FROM contacts with the appropriate WHERE clause to return actual rows. The response message will communicate the count. Example: SELECT * FROM contacts WHERE status ILIKE 'won';`;
 
   const response = await llm.invoke(prompt);
   const sql = response.content
