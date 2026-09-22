@@ -138,7 +138,7 @@ export async function POST(req: NextRequest) {
       );
     }
     const cleaned: CleanedRow = {
-      email: String(r.email).trim(),
+      email: String(r.email).trim().toLowerCase(),  // normalize to lowercase to prevent case-sensitive PK collisions
       name: r.name ? String(r.name).trim() : null,
       company: r.company ? String(r.company).trim() : null,
       designation: r.designation ? String(r.designation).trim() : null,

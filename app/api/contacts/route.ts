@@ -112,9 +112,14 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // Use UPSERT instead of INSERT so that if the email already exists (e.g.,
+  // the user clicked "Add Contact" with an email that's already in the DB
+  // — which can happen because the form auto-fills fields from existing
+  // records), the existing contact is UPDATED rather than throwing
+  // "duplicate key value violates unique constraint contacts_pkey".
   const { data, error } = await supabase
     .from("contacts")
-    .insert(body)
+    .upsert(body, { onConflict: "email", ignoreDuplicates: false })
     .select()
     .single();
 
