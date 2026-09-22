@@ -50,9 +50,12 @@ create extension if not exists "pgcrypto";
 -- 1. Drop old objects (clean slate)
 -- ---------------------------------------------------------------------
 drop trigger if exists trg_contacts_rollup   on public.contacts;
+drop trigger if exists trg_contacts_after    on public.contacts;
 drop trigger if exists trg_mailers_touch     on public.mailers;
 drop function if exists public.recompute_mailer_counters(text);
 drop function if exists public.contacts_rollup_trigger();
+drop function if exists public.contacts_before_trigger();
+drop function if exists public.contacts_after_trigger();
 drop function if exists public.touch_updated_at();
 
 drop table if exists public.email_journey cascade;
@@ -172,19 +175,16 @@ begin
 end;
 $$;
 
--- Per-row BEFORE INSERT/UPDATE trigger: touches last_activity_date and engagement_score
-create or replace function public.contacts_rollup_trigger()
+-- Per-row BEFORE INSERT/UPDATE trigger: touches last_activity_date,
+-- engagement_score, and updated_at on NEW.
+-- (The mailer recompute happens in the AFTER trigger below — we can't
+-- recompute here because the new row isn't visible to other queries
+-- at BEFORE time.)
+create or replace function public.contacts_before_trigger()
 returns trigger
 language plpgsql
 as $$
-declare
-    v_old_mailer text;
-    v_new_mailer text;
 begin
-    v_old_mailer := case when tg_op = 'DELETE' or tg_op = 'UPDATE' then old.mailer_id else null end;
-    v_new_mailer := case when tg_op = 'INSERT' or tg_op = 'UPDATE' then new.mailer_id else null end;
-
-    -- On INSERT/UPDATE: touch last_activity_date and engagement_score on the new row
     if tg_op = 'INSERT' or tg_op = 'UPDATE' then
         new.last_activity_date := case
             when new.opens > 0 or new.clicks > 0 then coalesce(new.last_activity_date, now())
@@ -195,11 +195,25 @@ begin
             when new.opens  > 0 then 'WARM'
             else 'COLD'
         end;
+        new.updated_at := now();
     end if;
+    return new;
+end;
+$$;
 
-    -- AFTER part: recompute the affected mailer(s).
-    -- We can't use AFTER trigger here because we already mutated new.* in BEFORE.
-    -- Use a PERFORM in the same transaction.
+-- Per-row AFTER INSERT/UPDATE/DELETE trigger: recompute the affected mailer(s).
+-- (Must be AFTER so the new/updated/deleted row is visible to the recompute query.)
+create or replace function public.contacts_after_trigger()
+returns trigger
+language plpgsql
+as $$
+declare
+    v_old_mailer text;
+    v_new_mailer text;
+begin
+    v_old_mailer := case when tg_op = 'DELETE' or tg_op = 'UPDATE' then old.mailer_id else null end;
+    v_new_mailer := case when tg_op = 'INSERT' or tg_op = 'UPDATE' then new.mailer_id else null end;
+
     if v_old_mailer is not null and v_old_mailer <> v_new_mailer then
         perform public.recompute_mailer_counters(v_old_mailer);
     end if;
@@ -217,7 +231,12 @@ $$;
 drop trigger if exists trg_contacts_rollup on public.contacts;
 create trigger trg_contacts_rollup
     before insert or update or delete on public.contacts
-    for each row execute function public.contacts_rollup_trigger();
+    for each row execute function public.contacts_before_trigger();
+
+drop trigger if exists trg_contacts_after on public.contacts;
+create trigger trg_contacts_after
+    after insert or update or delete on public.contacts
+    for each row execute function public.contacts_after_trigger();
 
 
 -- ---------------------------------------------------------------------
