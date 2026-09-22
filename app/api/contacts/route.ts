@@ -1,6 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 
+/**
+ * Normalize opt-in status to one of the 3 canonical values.
+ * Accepts "Hardbounced", "hard-bounced", "HB", "bounced" → "Hard Bounced"
+ * Accepts "Unsub", "opted out" → "Unsubscribed"
+ * Accepts "sub", "active", "opted in" → "Subscribed"
+ */
+function normalizeOptinStatus(raw: string | undefined | null): string {
+  const s = (raw ?? "").trim().toLowerCase().replace(/[-_\s]+/g, " ");
+  if (s === "hard bounced" || s === "hardbounced" || s === "hb" || s === "bounced" || s === "hard") return "Hard Bounced";
+  if (s === "unsubscribed" || s === "unsub" || s === "opted out" || s === "opt out" || s === "optout") return "Unsubscribed";
+  if (s === "subscribed" || s === "sub" || s === "active" || s === "opted in" || s === "opt in" || s === "optin" || s === "") return "Subscribed";
+  return "Subscribed";  // safe default for unrecognized
+}
+
 export async function GET() {
   const { data, error } = await supabase
     .from("contacts")
@@ -83,6 +97,11 @@ export async function POST(req: NextRequest) {
   // v2: unsubscribed is removed - the optin_status dropdown covers it.
   delete body.unsubscribed;
 
+  // Normalize opt-in status (handles "Hardbounced", "hard-bounced", "HB" etc.)
+  if (body.optin_status !== undefined) {
+    body.optin_status = normalizeOptinStatus(body.optin_status);
+  }
+
   // v2.2: normalize tags
   body.tags = normalizeTags(body.tags);
 
@@ -129,6 +148,11 @@ export async function PUT(req: NextRequest) {
   }
 
   delete fields.unsubscribed;
+
+  // Normalize opt-in status (handles "Hardbounced", "hard-bounced", "HB" etc.)
+  if (fields.optin_status !== undefined) {
+    fields.optin_status = normalizeOptinStatus(fields.optin_status);
+  }
 
   if ("tags" in fields) {
     fields.tags = normalizeTags(fields.tags);

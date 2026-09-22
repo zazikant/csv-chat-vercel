@@ -66,6 +66,29 @@ function normalizeStr(v: unknown): string {
 }
 
 /**
+ * Server-side normalization of opt-in status.
+ * Accepts variants like "Hardbounced" / "hard-bounced" / "bounced" / "HB"
+ * and normalizes to one of the 3 canonical values: "Subscribed", "Hard Bounced",
+ * "Unsubscribed". Used both by the bulk upload endpoint AND by the per-row
+ * POST/PUT endpoints so the value is always consistent regardless of source.
+ */
+function normalizeOptinStatusValue(raw: string): string {
+  const s = (raw || "").trim().toLowerCase().replace(/[-_\s]+/g, " ");
+  if (s === "hard bounced" || s === "hardbounced" || s === "hb" || s === "bounced" || s === "hard") {
+    return "Hard Bounced";
+  }
+  if (s === "unsubscribed" || s === "unsub" || s === "opted out" || s === "opt out" || s === "optout") {
+    return "Unsubscribed";
+  }
+  if (s === "subscribed" || s === "sub" || s === "active" || s === "opted in" || s === "opt in" || s === "optin" || s === "") {
+    return "Subscribed";
+  }
+  // Unrecognized — default to Subscribed (safe default) but log it
+  console.warn(`[bulk] unrecognized optin_status "${raw}" — defaulting to "Subscribed"`);
+  return "Subscribed";
+}
+
+/**
  * Normalize tags for comparison: lowercase, trim, dedupe, SORT.
  * Returns a canonical string representation so two arrays with the same
  * tags in different orders (and different cases) compare equal.
@@ -122,7 +145,7 @@ export async function POST(req: NextRequest) {
       phone: r.phone ? String(r.phone).trim() : null,
       city: r.city ? String(r.city).trim() : null,
       sector: r.sector ? String(r.sector).trim() : null,
-      optin_status: r.optin_status ? String(r.optin_status).trim() : "Subscribed",
+      optin_status: normalizeOptinStatusValue(r.optin_status ? String(r.optin_status).trim() : "Subscribed"),
       mailer_id: r.mailer_id ? String(r.mailer_id).trim() : null,
       opens: r.opens == null || r.opens === "" ? 0 : Number(r.opens) || 0,
       clicks: r.clicks == null || r.clicks === "" ? 0 : Number(r.clicks) || 0,

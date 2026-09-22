@@ -69,6 +69,34 @@ export default function CSVUploadModal({ onClose, onUpload }: Props) {
     URL.revokeObjectURL(url);
   }
 
+  /**
+   * Normalize an opt-in status value from a CSV cell to one of the 3
+   * canonical values: "Subscribed", "Hard Bounced", "Unsubscribed".
+   *
+   * Accepts common variants:
+   *   hard bounced / hardbounced / hard-bounced / hb  → "Hard Bounced"
+   *   unsubscribed / unsub / opted out / opt-out      → "Unsubscribed"
+   *   subscribed / sub / active / opted in / opt-in   → "Subscribed"
+   *
+   * Returns "" for unrecognized values (the bulk endpoint will then
+   * use the default "Subscribed" — but we treat unrecognized as no-op
+   * so the user sees the row's status wasn't accepted).
+   */
+  function normalizeOptinStatus(raw: string): string {
+    const s = raw.trim().toLowerCase().replace(/[-_\s]+/g, " ");
+    if (s === "hard bounced" || s === "hardbounced" || s === "hb" || s === "bounced" || s === "hard") {
+      return "Hard Bounced";
+    }
+    if (s === "unsubscribed" || s === "unsub" || s === "opted out" || s === "opt out" || s === "optout") {
+      return "Unsubscribed";
+    }
+    if (s === "subscribed" || s === "sub" || s === "active" || s === "opted in" || s === "opt in" || s === "optin") {
+      return "Subscribed";
+    }
+    // Unrecognized — return the original so the user notices the row wasn't normalized
+    return raw.trim();
+  }
+
   function validateRow(index: number, row: Record<string, string>): ParsedRow {
     const errors: string[] = [];
     const data: Partial<ContactRow> = {};
@@ -93,7 +121,17 @@ export default function CSVUploadModal({ onClose, onUpload }: Props) {
     str(row.phone, "phone");
     str(row.city, "city");
     str(row.sector, "sector");
-    str(row.optin_status, "optin_status");
+    // Normalize opt-in status: accept common variants
+    //   "Hardbounced" / "HardBounced" / "hard-bounced" / "hard bounced"  → "Hard Bounced"
+    //   "Unsubscribed" / "unsub" / "opted out"  → "Unsubscribed"
+    //   "Subscribed" / "sub" / "active" / "opted in"  → "Subscribed"
+    const rawOptin = (row.optin_status || "").trim();
+    if (rawOptin) {
+      const normalized = normalizeOptinStatus(rawOptin);
+      if (normalized) {
+        (data as Record<string, unknown>).optin_status = normalized;
+      }
+    }
     str(row.mailer_id, "mailer_id");
     num(row.opens, "opens");
     num(row.clicks, "clicks");
@@ -131,6 +169,9 @@ export default function CSVUploadModal({ onClose, onUpload }: Props) {
       sector: "sector",
       optin_status: "optin_status",
       opt_in_status: "optin_status",
+      "opt-in": "optin_status",       // common CSV header variant (your CSV uses this)
+      "opt-in_status": "optin_status",
+      optin: "optin_status",
       mailer_id: "mailer_id",
       mailer: "mailer_id",
       opens: "opens",
