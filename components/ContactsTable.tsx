@@ -79,11 +79,12 @@ export default function ContactsTable({
   const [filters, setFilters] = useState<Filters>({ ...EMPTY_FILTERS });
   const [showFilters, setShowFilters] = useState(false);
 
-  // Compute "Total Mails Sent" per email: count of rows with the same email.
-  // This is the number of mailers assigned to that email across all rows.
+  // Compute "Total Mails Sent" per email: count of rows with the same email
+  // AND a non-null mailer_id. Rows without a mailer assignment don't count.
   const emailCounts = new Map<string, number>();
   if (showTotalMailsSent) {
     for (const row of rows) {
+      if (!row.mailer_id) continue;  // skip unassigned contacts
       const emailKey = (row.email || "").toLowerCase();
       emailCounts.set(emailKey, (emailCounts.get(emailKey) ?? 0) + 1);
     }

@@ -324,7 +324,7 @@ export default function HomePage() {
         </div>
       </div>
 
-      {tab === "contacts" && (editRecord !== null || editMode === "add") && (
+      {(tab === "contacts" || tab === "main") && (editRecord !== null || editMode === "add") && (
         <EditModal
           record={editRecord}
           mode={editMode}
