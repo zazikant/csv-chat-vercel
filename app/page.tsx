@@ -8,6 +8,7 @@ import ChatPanel from "@/components/ChatPanel";
 import EditModal from "@/components/EditModal";
 import MailerEditModal from "@/components/MailerEditModal";
 import CSVUploadModal from "@/components/CSVUploadModal";
+import BulkDeleteModal from "@/components/BulkDeleteModal";
 import SqlQueryBox from "@/components/SqlQueryBox";
 import { ContactRow, MailerRow } from "@/lib/langgraph/state";
 
@@ -49,6 +50,7 @@ export default function HomePage() {
   const [mailerRecord, setMailerRecord] = useState<MailerRow | null>(null);
   const [mailerMode, setMailerMode]     = useState<"add" | "edit">("edit");
   const [showUpload, setShowUpload] = useState(false);
+  const [showBulkDelete, setShowBulkDelete] = useState(false);
 
   // ---------- Contacts handlers ----------
   async function handleDeleteRows(emails: string[]) {
@@ -129,6 +131,54 @@ export default function HomePage() {
     reloadMailers();
   }
 
+  /**
+   * Bulk-delete contacts by email. Fetches existing emails first so we can
+   * report how many were actually deleted vs how many weren't found (already
+   * deleted previously). Used by the BulkDeleteModal on the Contacts tab.
+   */
+  async function handleBulkDeleteContacts(emails: string[]): Promise<{ deleted: number; notFound: string[] }> {
+    // Fetch existing contacts to determine which emails actually exist
+    const uniqueEmails = Array.from(new Set(emails));
+    const res = await fetch("/api/contacts");
+    const allContacts: ContactRow[] = res.ok ? await res.json() : [];
+    const existingEmails = new Set(allContacts.map((c) => c.email));
+    const toDelete = uniqueEmails.filter((e) => existingEmails.has(e));
+    const notFound = uniqueEmails.filter((e) => !existingEmails.has(e));
+
+    if (toDelete.length > 0) {
+      await fetch("/api/contacts", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ emails: toDelete }),
+      });
+      reloadContacts();
+    }
+    return { deleted: toDelete.length, notFound };
+  }
+
+  /**
+   * Bulk-delete mailers by mailer_id. Same pattern as contacts — fetch
+   * existing first, delete the ones that match, report not-found.
+   */
+  async function handleBulkDeleteMailers(mailerIds: string[]): Promise<{ deleted: number; notFound: string[] }> {
+    const uniqueIds = Array.from(new Set(mailerIds));
+    const res = await fetch("/api/mailers");
+    const allMailers: MailerRow[] = res.ok ? await res.json() : [];
+    const existingIds = new Set(allMailers.map((m) => m.mailer_id));
+    const toDelete = uniqueIds.filter((id) => existingIds.has(id));
+    const notFound = uniqueIds.filter((id) => !existingIds.has(id));
+
+    if (toDelete.length > 0) {
+      await fetch("/api/mailers", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mailer_ids: toDelete }),
+      });
+      reloadMailers();
+    }
+    return { deleted: toDelete.length, notFound };
+  }
+
   function reloadMailers() {
     fetchAllMailers().then(setMailers);
   }
@@ -202,6 +252,7 @@ export default function HomePage() {
               onEdit={handleEdit}
               onAdd={handleAdd}
               onUpload={() => setShowUpload(true)}
+              onBulkDelete={() => setShowBulkDelete(true)}
               onDeleteRows={handleDeleteRows}
             />
           ) : (
@@ -212,6 +263,7 @@ export default function HomePage() {
               onReset={handleResetMailers}
               onEdit={handleEditMailer}
               onAdd={handleAddMailer}
+              onBulkDelete={() => setShowBulkDelete(true)}
               onDeleteRows={handleDeleteMailers}
             />
           )}
@@ -271,6 +323,17 @@ export default function HomePage() {
             setShowUpload(false);
             reloadContacts();
           }}
+        />
+      ) : null}
+
+      {showBulkDelete ? (
+        <BulkDeleteModal
+          entityName={tab === "contacts" ? "Contacts" : "Mailers"}
+          pkFieldName={tab === "contacts" ? "email" : "mailer_id"}
+          pkLabel={tab === "contacts" ? "Email" : "Mailer ID"}
+          pkAliases={tab === "contacts" ? [] : ["mailer"]}
+          onClose={() => setShowBulkDelete(false)}
+          onDelete={tab === "contacts" ? handleBulkDeleteContacts : handleBulkDeleteMailers}
         />
       ) : null}
     </div>
