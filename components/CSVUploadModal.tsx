@@ -232,11 +232,20 @@ export default function CSVUploadModal({ onClose, onUpload }: Props) {
       if (!res.ok) {
         throw new Error(responseData.error || "Upload failed");
       }
-      // Show dedup summary in a friendly toast (or just close if 0 skipped)
-      const skipped = responseData.skipped ?? 0;
+      // Show summary toast: how many new vs updated vs skipped
       const inserted = responseData.inserted ?? 0;
-      if (skipped > 0) {
-        alert(`Upload complete: ${inserted} contact${inserted !== 1 ? "s" : ""} added/updated, ${skipped} skipped (exact duplicate match).`);
+      const updated = responseData.updated ?? 0;
+      const skipped = responseData.skipped ?? 0;
+      const total = responseData.total ?? 0;
+      const parts: string[] = [];
+      if (inserted > 0) parts.push(`${inserted} new`);
+      if (updated > 0)  parts.push(`${updated} updated`);
+      if (skipped > 0)   parts.push(`${skipped} skipped (exact duplicate)`);
+      const summary = parts.length > 0
+        ? `Upload complete: ${parts.join(", ")} out of ${total} row${total !== 1 ? "s" : ""}.`
+        : `Upload complete: ${total} row${total !== 1 ? "s" : ""} processed.`;
+      if (inserted > 0 || updated > 0 || skipped > 0) {
+        alert(summary);
       }
       onUpload();
       onClose();
@@ -327,8 +336,8 @@ export default function CSVUploadModal({ onClose, onUpload }: Props) {
                 Template fields: <strong>Email</strong> (required), Name, Company, Designation,
                 Phone, City, Sector, Opt-in Status (Subscribed / Hard Bounced / Unsubscribed),
                 Mailer ID, Opens (int), Clicks (int), Tags (comma-separated e.g. &quot;vip, mumbai, contractor&quot;).
-                <br />Dedup rule: a row is skipped if an existing contact already matches ALL of
-                Name + Company + Designation + Email + Phone + Mailer ID.
+                <br />Dedup rule: a row is <strong>updated</strong> if email matches and any field differs;
+                <strong>skipped</strong> only if all 6 fields (Name + Company + Designation + Email + Phone + Mailer ID) match exactly.
                 Engagement and Mailer counters are auto-maintained.
               </p>
             </div>

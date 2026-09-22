@@ -8,20 +8,19 @@ export const runtime = "nodejs";
  *
  * Body: { rows: Array<Partial<ContactRow>> }
  *
- * Dedup logic (per user spec v2.3):
+ * Dedup logic (per user spec v2.4):
  *   For each row in the upload:
- *     - If email does NOT exist in DB → INSERT (new contact)
- *     - If email exists AND all 6 fields match exactly → SKIP (exact dup)
- *     - If email exists AND any of the 6 fields differ → SKIP (don't overwrite)
+ *     - If email does NOT exist in DB        → INSERT (new contact)
+ *     - If email exists AND all 6 fields match exactly → SKIP (no change needed)
+ *     - If email exists AND any field differs → UPDATE (replace existing with new values)
  *
  *   The 6 fields checked: name, company, designation, email, phone, mailer_id
  *   (case-insensitive, trimmed for comparison).
  *
- *   This means: CSV upload NEVER overwrites existing records. To update a
- *   contact, edit it manually in the UI.
+ *   This is UPSERT behavior: existing contacts are updated with new values
+ *   from the CSV, except when nothing has changed (exact duplicate).
  *
- * Response: { inserted, skipped, skippedRows, total }
- *   skippedRows: array of { email, reason } so the UI can show a summary.
+ * Response: { inserted, updated, skipped, skippedRows, total }
  *
  * Tags: comma-separated string in CSV → normalized to text[] (lowercase, deduped).
  */
@@ -161,16 +160,21 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  // Step 4: Apply dedup — skip ANY row whose email already exists in DB.
-  // (User spec v2.3: never overwrite existing records via CSV import.
-  //  To update a contact, edit it manually in the UI.)
-  const toInsert: CleanedRow[] = [];
-  const skipped: { email: string; reason: string }[] = [];
+  // Step 4: Apply dedup — split rows into "insert" (new email), "update"
+  // (existing email with different fields), and "skip" (exact duplicate).
+  // Both insert and update rows go into the upsert payload (Supabase's
+  // upsert with onConflict=email will INSERT new emails and UPDATE existing
+  // ones in a single call).
+  const toUpsert: CleanedRow[] = [];
+  const skipped: Array<{ email: string; reason: string }> = [];
+  let updateCount = 0;
+  let insertCount = 0;
   for (const row of cleanedRows) {
     const existingMatches = existingByEmail.get(normalizeStr(row.email)) ?? [];
     if (existingMatches.length === 0) {
-      // Email is new — insert
-      toInsert.push(row);
+      // Email is new — will be INSERTed
+      toUpsert.push(row);
+      insertCount++;
       continue;
     }
     // Email already exists — check if it's an exact match (same 6 fields)
@@ -184,46 +188,54 @@ export async function POST(req: NextRequest) {
     if (isExactMatch) {
       skipped.push({
         email: row.email,
-        reason: "exact duplicate — skipped (existing record preserved)",
+        reason: "exact duplicate — no changes needed",
       });
     } else {
-      // Email exists with different other fields — DON'T overwrite (preserve existing data)
+      // Email exists with different fields — UPDATE the existing record
+      // with the new values from the CSV.
+      toUpsert.push(row);
+      updateCount++;
+
+      // Build a diff summary for the response (purely informational)
       const diffs: string[] = [];
       const ex = existingMatches[0];
       if (normalizeStr(ex.name)       !== normalizeStr(row.name))       diffs.push(`name ("${ex.name ?? ""}" → "${row.name ?? ""}")`);
       if (normalizeStr(ex.company)    !== normalizeStr(row.company))     diffs.push(`company ("${ex.company ?? ""}" → "${row.company ?? ""}")`);
-      if (normalizeStr(ex.designation) !== normalizeStr(row.designation)) diffs.push(`designation`);
-      if (normalizeStr(ex.phone)      !== normalizeStr(row.phone))       diffs.push(`phone`);
-      if (normalizeStr(ex.mailer_id)  !== normalizeStr(row.mailer_id))   diffs.push(`mailer_id`);
+      if (normalizeStr(ex.designation) !== normalizeStr(row.designation)) diffs.push(`designation ("${ex.designation ?? ""}" → "${row.designation ?? ""}")`);
+      if (normalizeStr(ex.phone)      !== normalizeStr(row.phone))       diffs.push(`phone ("${ex.phone ?? ""}" → "${row.phone ?? ""}")`);
+      if (normalizeStr(ex.mailer_id)  !== normalizeStr(row.mailer_id))   diffs.push(`mailer_id ("${ex.mailer_id ?? ""}" → "${row.mailer_id ?? ""}")`);
+      // Stash the diff in the skipped array too (as an "updated" entry) so the UI can show it
       skipped.push({
         email: row.email,
-        reason: `email already exists, NOT replaced (different: ${diffs.join(", ")}). To update, edit this contact manually in the UI.`,
+        reason: `updated (${diffs.join(", ")})`,
       });
     }
   }
 
-  // Step 5: Insert the new rows (no upsert — only new emails go in)
-  let inserted = 0;
-  let insertErr: string | null = null;
-  if (toInsert.length > 0) {
-    const { data: insertData, error: insertError } = await supabase
+  // Step 5: Upsert (insert new + update existing in one call)
+  let upsertedCount = 0;
+  let upsertErr: string | null = null;
+  if (toUpsert.length > 0) {
+    const { data: upsertData, error: upsertError } = await supabase
       .from("contacts")
-      .insert(toInsert)
+      .upsert(toUpsert, { onConflict: "email", ignoreDuplicates: false })
       .select();
-    if (insertError) {
-      insertErr = insertError.message;
+    if (upsertError) {
+      upsertErr = upsertError.message;
     } else {
-      inserted = insertData?.length ?? 0;
+      upsertedCount = upsertData?.length ?? 0;
     }
   }
 
-  if (insertErr) {
-    return NextResponse.json({ error: insertErr }, { status: 500 });
+  if (upsertErr) {
+    return NextResponse.json({ error: upsertErr }, { status: 500 });
   }
 
   return NextResponse.json({
-    inserted,
-    skipped: skipped.length,
+    inserted: insertCount,
+    updated: updateCount,
+    upserted: upsertedCount,  // total rows actually written (= insertCount + updateCount, modulo errors)
+    skipped: skipped.filter((s) => s.reason.startsWith("exact")).length,
     skippedRows: skipped,
     total: cleanedRows.length,
   }, { status: 201 });
