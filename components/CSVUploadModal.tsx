@@ -277,15 +277,17 @@ export default function CSVUploadModal({ onClose, onUpload }: Props) {
       const inserted = responseData.inserted ?? 0;
       const updated = responseData.updated ?? 0;
       const skipped = responseData.skipped ?? 0;
+      const intraDupes = responseData.intraCsvDuplicates ?? 0;
       const total = responseData.total ?? 0;
       const parts: string[] = [];
-      if (inserted > 0) parts.push(`${inserted} new`);
-      if (updated > 0)  parts.push(`${updated} updated`);
-      if (skipped > 0)   parts.push(`${skipped} skipped (exact duplicate)`);
+      if (inserted > 0)    parts.push(`${inserted} new`);
+      if (updated > 0)     parts.push(`${updated} updated`);
+      if (skipped > 0)     parts.push(`${skipped} skipped (exact duplicate)`);
+      if (intraDupes > 0)  parts.push(`${intraDupes} duplicate email${intraDupes > 1 ? "s" : ""} in CSV (later row wins)`);
       const summary = parts.length > 0
         ? `Upload complete: ${parts.join(", ")} out of ${total} row${total !== 1 ? "s" : ""}.`
         : `Upload complete: ${total} row${total !== 1 ? "s" : ""} processed.`;
-      if (inserted > 0 || updated > 0 || skipped > 0) {
+      if (inserted > 0 || updated > 0 || skipped > 0 || intraDupes > 0) {
         alert(summary);
       }
       onUpload();

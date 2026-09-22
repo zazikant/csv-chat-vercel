@@ -284,13 +284,37 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // Step 5: Upsert (insert new + update existing in one call)
+  // Step 5: De-duplicate toUpsert by email (keep LAST occurrence wins).
+  // If the CSV has multiple rows with the same email, PostgreSQL's upsert
+  // in a single batch would throw 'duplicate key value violates unique
+  // constraint contacts_pkey'. We dedupe here so only one row per email
+  // goes into the upsert call. Earlier duplicates are added to skipped[]
+  // with reason "duplicate email in CSV".
+  const upsertByEmail = new Map<string, CleanedRow>();
+  const intraCsvDupes: { email: string; reason: string }[] = [];
+  for (const row of toUpsert) {
+    const key = normalizeStr(row.email);
+    if (upsertByEmail.has(key)) {
+      // This email already appears in the CSV — skip the earlier one,
+      // the later row wins (more recent = more authoritative).
+      intraCsvDupes.push({
+        email: row.email,
+        reason: "duplicate email in CSV — earlier row skipped, later row wins",
+      });
+    }
+    upsertByEmail.set(key, row);  // overwrites earlier entry
+  }
+  const dedupedUpsert = Array.from(upsertByEmail.values());
+  // Append intra-CSV dupes to the skipped list (purely informational)
+  for (const d of intraCsvDupes) skipped.push(d);
+
+  // Step 6: Upsert (insert new + update existing in one call)
   let upsertedCount = 0;
   let upsertErr: string | null = null;
-  if (toUpsert.length > 0) {
+  if (dedupedUpsert.length > 0) {
     const { data: upsertData, error: upsertError } = await supabase
       .from("contacts")
-      .upsert(toUpsert, { onConflict: "email", ignoreDuplicates: false })
+      .upsert(dedupedUpsert, { onConflict: "email", ignoreDuplicates: false })
       .select();
     if (upsertError) {
       upsertErr = upsertError.message;
@@ -304,10 +328,11 @@ export async function POST(req: NextRequest) {
   }
 
   return NextResponse.json({
-    inserted: insertCount,
+    inserted: insertCount - intraCsvDupes.length,  // subtract intra-CSV dupes (they were counted as inserts but not actually written)
     updated: updateCount,
-    upserted: upsertedCount,  // total rows actually written (= insertCount + updateCount, modulo errors)
+    upserted: upsertedCount,  // total rows actually written to DB
     skipped: skipped.filter((s) => s.reason.startsWith("exact")).length,
+    intraCsvDuplicates: intraCsvDupes.length,
     skippedRows: skipped,
     total: cleanedRows.length,
   }, { status: 201 });
