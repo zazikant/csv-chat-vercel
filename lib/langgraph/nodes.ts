@@ -1,28 +1,16 @@
-import { ChatOpenAI } from "@langchain/openai";
+import { nvidiaChat } from "../nvidia";
 import { getTableSchema, executeSQL, saveMessage } from "./tools";
 import { QueryGraphStateType } from "./state";
-import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 
-function getLLM(state: QueryGraphStateType): BaseChatModel {
-  if (state.llmProvider === "nvidia") {
-    return new ChatOpenAI({
-      model: state.model || "openai/gpt-oss-120b",
-      apiKey: state.apiKey || "",
-      configuration: {
-        baseURL: "https://integrate.api.nvidia.com/v1",
-      } as Record<string, unknown>,
-      temperature: 0,
-    });
-  }
-  return new ChatOpenAI({
-    model: state.model || "z-ai/glm-4.5-air:free",
-    apiKey: state.apiKey || "",
-    configuration: {
-      baseURL: "https://openrouter.ai/api/v1",
-    } as Record<string, unknown>,
-    temperature: 0,
-  });
-}
+/**
+ * All LLM calls go through nvidiaChat() (see lib/nvidia.ts).
+ *
+ * The NVIDIA client uses raw fetch + SSE parsing (no @langchain/openai SDK
+ * needed) and reads NVIDIA_API_KEY from the server environment. The model
+ * defaults to nvidia/nemotron-3-super-120b-a12b.
+ *
+ * Ported from github.com/zazikant/tradingview-notes-app-nvidia.
+ */
 
 export async function schemaLoaderNode(
   _state: QueryGraphStateType
@@ -35,13 +23,12 @@ export async function schemaLoaderNode(
 export async function intentClassifierNode(
   state: QueryGraphStateType
 ): Promise<Partial<QueryGraphStateType>> {
-  const llm = getLLM(state);
   const historyText = state.conversationHistory
     .slice(-10)
     .map((m) => `${m.role.toUpperCase()}: ${m.content}`)
     .join("\n") || "None";
 
-  const prompt = `You are analyzing a query over a contacts database table.
+  const prompt = `You are analyzing a query over an email campaign tracker database.
 
 Schema:
 ${state.tableSchema}
@@ -69,8 +56,7 @@ IMPORTANT: If user asks a question about counts or aggregates while data is filt
 
 Return ONLY the single classification word, nothing else.`;
 
-  const response = await llm.invoke(prompt);
-  const raw = response.content.toString().trim().toLowerCase().split(/\s+/)[0];
+  const raw = (await nvidiaChat(prompt, { temperature: 0, maxRetries: 2 })).trim().toLowerCase().split(/\s+/)[0];
   const valid = ["filter", "count", "lookup", "aggregate", "sort", "mailer", "reset", "unknown"];
   const intent = valid.includes(raw) ? raw : "unknown";
 
@@ -81,7 +67,6 @@ Return ONLY the single classification word, nothing else.`;
 export async function sqlGeneratorNode(
   state: QueryGraphStateType
 ): Promise<Partial<QueryGraphStateType>> {
-  const llm = getLLM(state);
   const historyText = state.conversationHistory
     .slice(-10)
     .map((m) => `${m.role.toUpperCase()}: ${m.content}`)
@@ -89,12 +74,18 @@ export async function sqlGeneratorNode(
 
   const prompt = `Generate a SQL SELECT query to answer: "${state.userQuery}"
 
-Table: contacts (use ILIKE for case-insensitive text comparisons)
+Schema:
+${state.tableSchema}
+
+Conversation history:
+${historyText}
 
 Rules:
-1. ALWAYS use "SELECT * FROM contacts" — never SELECT COUNT, never specific columns
+1. ALWAYS use "SELECT * FROM <table>" — never SELECT COUNT, never specific columns
 2. Add WHERE clauses for filters, ORDER BY for sorting
 3. End with semicolon
+4. Use ILIKE for case-insensitive text comparisons
+5. Valid tables: contacts, mailers, email_journey
 
 Examples:
 - Show hot contacts → SELECT * FROM contacts WHERE engagement_score ILIKE 'hot' ORDER BY email;
@@ -104,9 +95,7 @@ Examples:
 - Best mailers → SELECT * FROM mailers ORDER BY open_rate DESC;
 - Recent opens → SELECT * FROM email_journey WHERE event_type = 'OPENED' ORDER BY timestamp DESC;`;
 
-  const response = await llm.invoke(prompt);
-  const sql = response.content
-    .toString()
+  const sql = (await nvidiaChat(prompt, { temperature: 0, maxRetries: 2 }))
     .trim()
     .replace(/```sql|```/gi, "")
     .trim();
@@ -133,7 +122,6 @@ export async function queryExecutorNode(
 export async function errorRecoveryNode(
   state: QueryGraphStateType
 ): Promise<Partial<QueryGraphStateType>> {
-  const llm = getLLM(state);
   const prompt = `This PostgreSQL query failed. Fix it.
 
 Schema:
@@ -149,9 +137,7 @@ Original user query: "${state.userQuery}"
 
 Return ONLY the corrected SQL SELECT statement, nothing else. No markdown, no backticks.`;
 
-  const response = await llm.invoke(prompt);
-  const fixedSQL = response.content
-    .toString()
+  const fixedSQL = (await nvidiaChat(prompt, { temperature: 0, maxRetries: 2 }))
     .trim()
     .replace(/```sql|```/gi, "")
     .trim();
@@ -163,8 +149,6 @@ Return ONLY the corrected SQL SELECT statement, nothing else. No markdown, no ba
 export async function responseFormatterNode(
   state: QueryGraphStateType
 ): Promise<Partial<QueryGraphStateType>> {
-  const llm = getLLM(state);
-
   if (state.queryIntent === "unknown") {
     const msg =
       "I can only answer questions about the email campaign tracker data — contacts, mailers, and email journey events (opens, clicks, bounces). Please rephrase your question.";
@@ -213,7 +197,7 @@ export async function responseFormatterNode(
       ? `${state.queryResult.length} record(s) returned.`
       : "No matching records found.";
 
-  const prompt = `You are a helpful data assistant for a contacts database.
+  const prompt = `You are a helpful data assistant for an email campaign tracker database.
 
 User question: "${state.userQuery}"
 SQL that was run: ${state.generatedSQL}
@@ -231,8 +215,7 @@ Write a short, friendly, conversational response (1–3 sentences).
 - For reset: confirm the full list is showing.
 - Do NOT list all the data — the table on screen already shows it.`;
 
-  const response = await llm.invoke(prompt);
-  const final = response.content.toString().trim();
+  const final = (await nvidiaChat(prompt, { temperature: 0.3, maxRetries: 2 })).trim();
 
   await saveMessage(state.sessionId, "user", state.userQuery);
   await saveMessage(state.sessionId, "assistant", final);

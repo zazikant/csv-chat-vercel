@@ -69,8 +69,13 @@ export interface JourneyRow {
   device_info: string | null;
 }
 
-// ---- LLM provider + graph state -------------------------------------------
-export type LLMProvider = "openrouter" | "nvidia";
+// ---- LLM provider (NVIDIA only — see lib/nvidia.ts) -------------------
+//
+// The app uses NVIDIA's integrate API exclusively (model defaults to
+// nvidia/nemotron-3-super-120b-a12b). The API key is read server-side
+// from NVIDIA_API_KEY — never exposed to the browser.
+//
+// Ported from github.com/zazikant/tradingview-notes-app-nvidia.
 
 export const QueryGraphState = Annotation.Root({
   userQuery: Annotation<string>({
@@ -108,15 +113,6 @@ export const QueryGraphState = Annotation.Root({
       const merged = [...existing, ...next];
       return merged.slice(-20);
     },
-  }),
-  llmProvider: Annotation<LLMProvider>({
-    reducer: (_, next) => next,
-  }),
-  apiKey: Annotation<string>({
-    reducer: (_, next) => next,
-  }),
-  model: Annotation<string>({
-    reducer: (_, next) => next,
   }),
   currentRows: Annotation<ContactRow[]>({
     reducer: (_, next) => next,

@@ -3,11 +3,23 @@ import { graph } from "@/lib/langgraph/graph";
 import { loadHistory } from "@/lib/langgraph/tools";
 
 export const runtime = "nodejs";
-export const maxDuration = 120;
+export const maxDuration = 60;  // Vercel Hobby Node cap — NVIDIA calls run with 55s internal timeout
 
+/**
+ * POST /api/chat
+ *
+ * Body: { userQuery, sessionId, currentRows? }
+ *
+ * The LLM is always NVIDIA (nvidia/nemotron-3-super-120b-a12b by default).
+ * The API key is read from NVIDIA_API_KEY on the server — never accepted
+ * from the request body (avoids leaking the key through the browser).
+ *
+ * See lib/nvidia.ts for the NVIDIA client (ported from
+ * github.com/zazikant/tradingview-notes-app-nvidia).
+ */
 export async function POST(req: NextRequest) {
   try {
-    const { userQuery, sessionId, llmProvider, apiKey, model, currentRows } = await req.json();
+    const { userQuery, sessionId, currentRows } = await req.json();
 
     if (!userQuery?.trim() || !sessionId) {
       return NextResponse.json(
@@ -30,9 +42,6 @@ export async function POST(req: NextRequest) {
       finalResponse: "",
       shouldUpdateTable: false,
       tableSchema:   "",
-      llmProvider: llmProvider || "openrouter",
-      apiKey: apiKey || "",
-      model: model || "",
       currentRows: currentRows || [],
     });
 
@@ -46,8 +55,9 @@ export async function POST(req: NextRequest) {
 
   } catch (err) {
     console.error("Chat API error:", err);
+    const message = err instanceof Error ? err.message : "Internal server error";
     return NextResponse.json(
-      { error: "Internal server error" },
+      { error: message },
       { status: 500 }
     );
   }

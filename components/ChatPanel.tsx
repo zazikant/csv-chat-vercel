@@ -2,18 +2,11 @@
 
 import { useState, useRef, useEffect } from "react";
 import { ContactRow } from "@/lib/langgraph/state";
-import SettingsPanel from "./SettingsPanel";
 
 interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   sql?: string;
-}
-
-interface Settings {
-  provider: "openrouter" | "nvidia";
-  apiKey: string;
-  model: string;
 }
 
 interface Props {
@@ -22,23 +15,20 @@ interface Props {
   onTableUpdate: (rows: ContactRow[]) => void;
 }
 
+const NVIDIA_MODEL = "nvidia/nemotron-3-super-120b-a12b";
+
 export default function ChatPanel({ sessionId, currentRows, onTableUpdate }: Props) {
-  const [messages, setMessages]   = useState<ChatMessage[]>([
+  const [messages, setMessages] = useState<ChatMessage[]>([
     {
       role: "assistant",
       content:
-        "Hi! Ask me anything about your proposals and enquiries. Try: \"Show all open proposals\" or \"Total value by department\"",
+        "Hi! Ask me anything about your contacts, mailers, and email events. Try: \"Show hot contacts\", \"Which mailer had the best open rate?\", or \"Who opened M001?\"",
     },
   ]);
-  const [input, setInput]         = useState("");
-  const [loading, setLoading]     = useState(false);
-  const [settings, setSettings]   = useState<Settings>({
-    provider: "openrouter",
-    apiKey: process.env.NEXT_PUBLIC_OPENROUTER_API_KEY || "",
-    model: "z-ai/glm-4.5-air:free",
-  });
-  const bottomRef                 = useRef<HTMLDivElement>(null);
-  const inputRef                  = useRef<HTMLInputElement>(null);
+  const [input, setInput]     = useState("");
+  const [loading, setLoading] = useState(false);
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const inputRef  = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -56,12 +46,10 @@ export default function ChatPanel({ sessionId, currentRows, onTableUpdate }: Pro
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          userQuery: query, 
+        body: JSON.stringify({
+          userQuery: query,
           sessionId,
-          llmProvider: settings.provider,
-          apiKey: settings.apiKey,
-          model: settings.model,
+          // Server reads NVIDIA_API_KEY from env — never sent from browser.
           currentRows: [],
         }),
       });
@@ -108,11 +96,11 @@ export default function ChatPanel({ sessionId, currentRows, onTableUpdate }: Pro
   }
 
   const suggestions = [
-    "Show all proposals",
-    "How many Won?",
-    "Total value by department",
-    "Sort by proposal value",
-    "Group by status",
+    "Show all contacts",
+    "Show HOT engagement",
+    "Best open rate mailer",
+    "Recent opens",
+    "Subscribed contacts",
   ];
 
   return (
@@ -122,11 +110,14 @@ export default function ChatPanel({ sessionId, currentRows, onTableUpdate }: Pro
           <div>
             <h2 className="text-sm font-semibold text-gray-700">Chat with your data</h2>
             <p className="text-xs text-gray-400 mt-0.5">
-              {settings.provider === "nvidia" ? "NVIDIA" : "OpenRouter"}
-              {settings.model && ` • ${settings.model}`}
+              <span className="inline-flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                NVIDIA
+              </span>
+              {" • "}
+              <span className="font-mono">{NVIDIA_MODEL}</span>
             </p>
           </div>
-          <SettingsPanel settings={settings} onSettingsChange={setSettings} />
         </div>
       </div>
 
@@ -192,8 +183,8 @@ export default function ChatPanel({ sessionId, currentRows, onTableUpdate }: Pro
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-placeholder="Ask about your proposals..."
-              className="flex-1 text-sm outline-none text-gray-700 placeholder-gray-500 bg-transparent"
+            placeholder="Ask about your contacts or mailers..."
+            className="flex-1 text-sm outline-none text-gray-700 placeholder-gray-500 bg-transparent"
             disabled={loading}
           />
           <button
