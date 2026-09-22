@@ -117,9 +117,80 @@ export async function POST(req: NextRequest) {
   // — which can happen because the form auto-fills fields from existing
   // records), the existing contact is UPDATED rather than throwing
   // "duplicate key value violates unique constraint contacts_pkey".
+  //
+  // MERGE SEMANTICS: if the email already exists, we first fetch the existing
+  // record and merge: for each field, if the new body has a non-null value,
+  // it wins; otherwise the existing value is preserved. This prevents the
+  // UPSERT from wiping out fields like tags / mailer_id / opens / clicks /
+  // optin_status that the user didn't fill in the Add Contact form.
+  //
+  // For a brand-new email, the body is inserted as-is (no merge needed).
+
+  // 1. Check if the email already exists
+  const { data: existingRow } = await supabase
+    .from("contacts")
+    .select("*")
+    .eq("email", body.email)
+    .maybeSingle();
+
+  if (existingRow) {
+    // 2. Email exists — merge: new non-null values win, existing values
+    //    are preserved for fields the new body didn't provide.
+    //    Auto-maintained fields (last_activity_date, engagement_score,
+    //    created_at, updated_at) are never copied from existing — they're
+    //    managed by triggers.
+    const merged: Record<string, unknown> = { ...existingRow };
+    // Strip auto-maintained fields from the existing-row base — they're
+    // managed by triggers and shouldn't be written by us.
+    for (const f of [
+      "last_activity_date","engagement_score","created_at","updated_at",
+      "total_sent","total_opens","total_clicks","unsubscribed_count","hardbounced_count",
+    ]) {
+      delete merged[f];
+    }
+    for (const [k, v] of Object.entries(body)) {
+      // Default-merge rule: non-null, non-empty-string new values override.
+      // EXCEPTIONS (handled by the special cases below):
+      //   - tags: empty array [] means "user didn't fill" → preserve existing
+      //   - opens/clicks: 0 means "user didn't fill" → preserve existing
+      //   - mailer_id: null means "user wants to unset" → override to null
+      //     (Note: the Add Contact form omits mailer_id entirely when empty,
+      //      so null here means the user explicitly cleared it.)
+      const isTagsEmptyArray    = (k === "tags"    && Array.isArray(v) && v.length === 0);
+      const isOpensOrClicksZero = ((k === "opens" || k === "clicks") && v === 0);
+      const isMailerIdNull      = (k === "mailer_id" && v === null);
+
+      if (isMailerIdNull) {
+        // User explicitly wants to unset the mailer assignment
+        merged[k] = null;
+      } else if (isTagsEmptyArray || isOpensOrClicksZero) {
+        // User didn't fill these — preserve existing value (don't override)
+      } else if (v !== null && v !== undefined && v !== "") {
+        // Normal case: new value overrides existing
+        merged[k] = v;
+      }
+      // else: v is null/undefined/"" — don't override (preserve existing)
+    }
+    // email is immutable (it's the PK)
+    merged.email = existingRow.email;
+
+    const { data: updatedData, error: updateError } = await supabase
+      .from("contacts")
+      .update(merged)
+      .eq("email", body.email)
+      .select()
+      .single();
+
+    if (updateError) {
+      return NextResponse.json({ error: updateError.message }, { status: 500 });
+    }
+    return NextResponse.json(updatedData, { status: 200 });
+  }
+
+  // 3. Email doesn't exist — INSERT as a new row
   const { data, error } = await supabase
     .from("contacts")
-    .upsert(body, { onConflict: "email", ignoreDuplicates: false })
+    .insert(body)
     .select()
     .single();
 

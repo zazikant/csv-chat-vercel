@@ -144,7 +144,13 @@ export default function EditModal({ record, mode, onClose, onSave }: Props) {
       if (mode === "edit") {
         payload.email = record!.email;
       }
-      if (!payload.mailer_id) payload.mailer_id = null;
+      // Normalize mailer_id: if empty/null, OMIT the field entirely so the
+      // server merge logic can distinguish "user didn't fill this" (preserve
+      // existing) from "user explicitly cleared it" (set to null).
+      // We do this by deleting the key from the payload when it's empty.
+      if (!payload.mailer_id) {
+        delete payload.mailer_id;
+      }
       // Ensure tags is always an array
       payload.tags = Array.isArray(payload.tags) ? payload.tags : [];
       const res = await fetch(url, {
