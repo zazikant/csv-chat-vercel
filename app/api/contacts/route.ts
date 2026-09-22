@@ -134,6 +134,8 @@ export async function POST(req: NextRequest) {
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
+    // Sync identity fields to other rows with the same email
+    await syncIdentityFields(body, existingId, (data as { email: string }).email);
     return NextResponse.json(data, { status: 200 });
   }
 
@@ -147,7 +149,34 @@ export async function POST(req: NextRequest) {
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+  // Sync identity fields to other rows with the same email
+  await syncIdentityFields(body, (data as { id: number }).id, (data as { email: string }).email);
   return NextResponse.json(data, { status: 201 });
+}
+
+/**
+ * Helper: sync the 4 identity fields (name, company, designation, phone)
+ * from the just-saved contact to ALL OTHER rows with the same email.
+ * This ensures that when you update one contact's identity, all rows for
+ * that email reflect the latest values.
+ */
+async function syncIdentityFields(savedBody: Record<string, unknown>, savedId: number, email: string): Promise<void> {
+  const identityFields: Array<"name" | "company" | "designation" | "phone"> = ["name", "company", "designation", "phone"];
+  const identityUpdate: Record<string, unknown> = {};
+  for (const f of identityFields) {
+    if (f in savedBody) {
+      identityUpdate[f] = savedBody[f];
+    }
+  }
+  if (Object.keys(identityUpdate).length === 0) return;
+  const { error: syncErr } = await supabase
+    .from("contacts")
+    .update(identityUpdate)
+    .eq("email", email)
+    .neq("id", savedId);
+  if (syncErr) {
+    console.warn(`[syncIdentityFields] failed to sync: ${syncErr.message}`);
+  }
 }
 
 export async function PUT(req: NextRequest) {
@@ -200,6 +229,11 @@ export async function PUT(req: NextRequest) {
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+
+  // Sync the 4 identity fields (name, company, designation, phone) to ALL
+  // other rows with the same email.
+  await syncIdentityFields(fields, id, (data as { email: string }).email);
+
   return NextResponse.json(data);
 }
 

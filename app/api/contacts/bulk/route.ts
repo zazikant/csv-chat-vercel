@@ -345,6 +345,46 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // Step 7: Sync identity fields across all rows with the same email.
+  // For each email that was touched (inserted or updated), propagate the
+  // latest name/company/designation/phone values to ALL rows with that email.
+  // This ensures that when you update one row's identity via CSV, all other
+  // rows for the same email get the same values.
+  if (!upsertErr) {
+    // Build a map: email → latest identity fields (from all touched rows)
+    const emailToLatestIdentity = new Map<string, { name: string | null; company: string | null; designation: string | null; phone: string | null }>();
+    for (const row of [...toInsert, ...toUpdate.map((u) => u.data)]) {
+      const emailKey = row.email.toLowerCase();
+      // Only update if the row has a non-null value for the identity field
+      // (don't overwrite a good value with null from a sparse CSV row).
+      const existing = emailToLatestIdentity.get(emailKey) ?? { name: null, company: null, designation: null, phone: null };
+      if (row.name)        existing.name        = row.name;
+      if (row.company)     existing.company     = row.company;
+      if (row.designation) existing.designation = row.designation;
+      if (row.phone)       existing.phone       = row.phone;
+      emailToLatestIdentity.set(emailKey, existing);
+    }
+
+    // For each email, update ALL rows with that email to have the latest identity fields
+    for (const [email, identity] of emailToLatestIdentity) {
+      // Only sync if at least one identity field is non-null
+      if (!identity.name && !identity.company && !identity.designation && !identity.phone) continue;
+      const { error: syncErr } = await supabase
+        .from("contacts")
+        .update({
+          name: identity.name,
+          company: identity.company,
+          designation: identity.designation,
+          phone: identity.phone,
+        })
+        .eq("email", email);
+      if (syncErr) {
+        console.warn(`[bulk] failed to sync identity fields for ${email}: ${syncErr.message}`);
+        // non-fatal
+      }
+    }
+  }
+
   if (upsertErr) {
     return NextResponse.json({ error: upsertErr }, { status: 500 });
   }
