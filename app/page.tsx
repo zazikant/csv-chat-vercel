@@ -8,6 +8,7 @@ import ChatPanel from "@/components/ChatPanel";
 import EditModal from "@/components/EditModal";
 import MailerEditModal from "@/components/MailerEditModal";
 import CSVUploadModal from "@/components/CSVUploadModal";
+import SqlQueryBox from "@/components/SqlQueryBox";
 import { ContactRow, MailerRow } from "@/lib/langgraph/state";
 
 type TabKey = "contacts" | "mailers";
@@ -63,6 +64,19 @@ export default function HomePage() {
     setRows(newRows);
     setFiltered(true);
     setContactPage(1);
+  }
+
+  /** Receive rows from the SQL Query Box (paste-your-own SQL flow). */
+  function handleSqlResult(rows: Record<string, unknown>[]) {
+    // The query result replaces whatever is shown in the contacts table.
+    // We mark the view as "filtered" so the user can hit "Show all" to reset.
+    setRows(rows as unknown as ContactRow[]);
+    setFiltered(true);
+    setContactPage(1);
+    // Auto-switch to Contacts tab so the user sees their results
+    setTab("contacts");
+    // Switch to table view on mobile so the user sees the result
+    setMobileView("table");
   }
 
   function handleReset() {
@@ -162,6 +176,11 @@ export default function HomePage() {
             Chat
           </button>
         </div>
+
+        {/* SQL Query Box — paste-your-own SQL (only on Contacts tab) */}
+        {tab === "contacts" && (
+          <SqlQueryBox onRun={handleSqlResult} />
+        )}
 
         {/* Tab body */}
         <div className="flex-1 overflow-hidden">

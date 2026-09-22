@@ -301,3 +301,12 @@ as $$
 $$;
 
 comment on function public.get_tag_counts() is 'Returns all distinct tags used across contacts with their usage counts. Used by the /api/tags endpoint for smart suggestions in the TagsInput component.';
+
+
+-- ---------------------------------------------------------------------
+-- 9. Drop conversation_history table (chat is now stateless)
+--    Chat history is NOT persisted to Supabase. The conversation state
+--    lives only in the browser (ChatPanel component's React state).
+--    This keeps Supabase disk usage to the minimum (only contacts + mailers).
+-- ---------------------------------------------------------------------
+drop table if exists public.conversation_history cascade;

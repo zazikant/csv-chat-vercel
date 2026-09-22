@@ -162,23 +162,8 @@ export async function executeSQL(
   }
 }
 
-export async function loadHistory(sessionId: string): Promise<Message[]> {
-  const { data } = await supabase
-    .from("conversation_history")
-    .select("role, content")
-    .eq("session_id", sessionId)
-    .order("created_at", { ascending: true })
-    .limit(20);
-
-  return (data as Message[]) ?? [];
-}
-
-export async function saveMessage(
-  sessionId: string,
-  role: "user" | "assistant",
-  content: string
-): Promise<void> {
-  await supabase
-    .from("conversation_history")
-    .insert({ session_id: sessionId, role, content });
-}
+// NOTE: saveMessage() and loadHistory() were removed.
+// Chat history is NOT persisted to Supabase — each chat session is stateless.
+// This keeps disk usage to the minimum (only contacts + mailers tables).
+// If you need chat history, the conversation state lives only in the
+// browser (ChatPanel component's React state).

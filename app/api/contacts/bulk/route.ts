@@ -184,20 +184,20 @@ export async function POST(req: NextRequest) {
     if (isExactMatch) {
       skipped.push({
         email: row.email,
-        reason: "exact duplicate (all fields match existing record)",
+        reason: "exact duplicate — skipped (existing record preserved)",
       });
     } else {
       // Email exists with different other fields — DON'T overwrite (preserve existing data)
       const diffs: string[] = [];
       const ex = existingMatches[0];
-      if (normalizeStr(ex.name)       !== normalizeStr(row.name))       diffs.push("name");
-      if (normalizeStr(ex.company)    !== normalizeStr(row.company))     diffs.push("company");
-      if (normalizeStr(ex.designation) !== normalizeStr(row.designation)) diffs.push("designation");
-      if (normalizeStr(ex.phone)      !== normalizeStr(row.phone))       diffs.push("phone");
-      if (normalizeStr(ex.mailer_id)  !== normalizeStr(row.mailer_id))   diffs.push("mailer_id");
+      if (normalizeStr(ex.name)       !== normalizeStr(row.name))       diffs.push(`name ("${ex.name ?? ""}" → "${row.name ?? ""}")`);
+      if (normalizeStr(ex.company)    !== normalizeStr(row.company))     diffs.push(`company ("${ex.company ?? ""}" → "${row.company ?? ""}")`);
+      if (normalizeStr(ex.designation) !== normalizeStr(row.designation)) diffs.push(`designation`);
+      if (normalizeStr(ex.phone)      !== normalizeStr(row.phone))       diffs.push(`phone`);
+      if (normalizeStr(ex.mailer_id)  !== normalizeStr(row.mailer_id))   diffs.push(`mailer_id`);
       skipped.push({
         email: row.email,
-        reason: `email already exists with different ${diffs.join(", ")} — not overwriting (edit manually to update)`,
+        reason: `email already exists, NOT replaced (different: ${diffs.join(", ")}). To update, edit this contact manually in the UI.`,
       });
     }
   }

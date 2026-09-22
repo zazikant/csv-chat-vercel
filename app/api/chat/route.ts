@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { graph } from "@/lib/langgraph/graph";
-import { loadHistory } from "@/lib/langgraph/tools";
+import { getTableSchema } from "@/lib/langgraph/tools";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;  // Vercel Hobby Node cap — NVIDIA calls run with 55s internal timeout
@@ -10,12 +10,13 @@ export const maxDuration = 60;  // Vercel Hobby Node cap — NVIDIA calls run wi
  *
  * Body: { userQuery, sessionId, currentRows? }
  *
+ * Stateless — chat history is NOT persisted to Supabase. The sessionId is
+ * only used by the LangGraph state machine internally; no rows are written
+ * to a conversation_history table. (Keeps Supabase disk usage minimal.)
+ *
  * The LLM is always NVIDIA (nvidia/nemotron-3-super-120b-a12b by default).
  * The API key is read from NVIDIA_API_KEY on the server — never accepted
  * from the request body (avoids leaking the key through the browser).
- *
- * See lib/nvidia.ts for the NVIDIA client (ported from
- * github.com/zazikant/tradingview-notes-app-nvidia).
  */
 export async function POST(req: NextRequest) {
   try {
@@ -28,12 +29,11 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const history = await loadHistory(sessionId);
-
     const result = await graph.invoke({
       userQuery: userQuery.trim(),
       sessionId,
-      conversationHistory: history,
+      // No conversationHistory fetched — chat is stateless.
+      conversationHistory: [],
       queryIntent:   "",
       generatedSQL:  "",
       queryResult:   [],

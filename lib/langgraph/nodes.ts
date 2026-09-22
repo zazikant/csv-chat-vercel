@@ -1,5 +1,5 @@
 import { nvidiaChat } from "../nvidia";
-import { getTableSchema, executeSQL, saveMessage } from "./tools";
+import { getTableSchema, executeSQL } from "./tools";
 import { QueryGraphStateType } from "./state";
 
 /**
@@ -152,8 +152,6 @@ export async function responseFormatterNode(
   if (state.queryIntent === "unknown") {
     const msg =
       "I can only answer questions about the email campaign tracker data — contacts, mailers, and email journey events (opens, clicks, bounces). Please rephrase your question.";
-    await saveMessage(state.sessionId, "user", state.userQuery);
-    await saveMessage(state.sessionId, "assistant", msg);
     return {
       finalResponse: msg,
       shouldUpdateTable: false,
@@ -167,8 +165,6 @@ export async function responseFormatterNode(
   if (state.queryError && (state.retryCount ?? 0) >= 3) {
     const msg =
       "I wasn't able to process that query after multiple attempts. Try rephrasing it or simplifying the request.";
-    await saveMessage(state.sessionId, "user", state.userQuery);
-    await saveMessage(state.sessionId, "assistant", msg);
     return {
       finalResponse: msg,
       shouldUpdateTable: false,
@@ -216,9 +212,6 @@ Write a short, friendly, conversational response (1–3 sentences).
 - Do NOT list all the data — the table on screen already shows it.`;
 
   const final = (await nvidiaChat(prompt, { temperature: 0.3, maxRetries: 2 })).trim();
-
-  await saveMessage(state.sessionId, "user", state.userQuery);
-  await saveMessage(state.sessionId, "assistant", final);
 
   console.log("💬 [ResponseFormatter] Done. shouldUpdateTable:", returnsRows);
   return {
