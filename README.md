@@ -2,7 +2,9 @@
 
 A Next.js 16 + TypeScript app for managing email contacts and tracking the performance of every mailer you send — open rates, click rates, and the full journey of every email.
 
-Built on Supabase (3-table schema) with a LangGraph + NVIDIA LLM chat panel for natural-language querying of the data.
+Built on Supabase (2-table schema with auto-maintained triggers) with a LangGraph + NVIDIA LLM chat panel for natural-language querying of the data.
+
+> **📖 For full architecture details, see [ARCHITECTURE.md](ARCHITECTURE.md)** — covers schema, triggers, API routes, CSV dedup logic, identity-field sync, LLM agent, and more.
 
 ## Database schema (3 tables)
 
