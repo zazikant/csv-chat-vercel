@@ -14,8 +14,8 @@ export interface Message {
 // (mailer_id). opens/clicks are manually entered per (contact, mailer).
 // The optin_status dropdown covers unsubscribed/bounced state.
 // If a contact is unsubscribed, set optin_status = 'Unsubscribed'.
-export interface ContactRow {
-  id: number;
+// ---- main_contacts (identity — 1 row per email) ---------------------------
+export interface MainContactRow {
   email: string;
   name: string | null;
   company: string | null;
@@ -23,13 +23,19 @@ export interface ContactRow {
   phone: string | null;
   city: string | null;
   sector: string | null;
-  optin_status: string | null;      // Subscribed / Hard Bounced / Unsubscribed
-  mailer_id: string | null;         // FK to mailers.mailer_id (nullable)
-  opens: number;                    // manually entered per (contact, mailer)
-  clicks: number;                   // manually entered per (contact, mailer)
-  tags: string[];                  // free-form categorization tags
+  tags: string[];
+}
+
+// ---- contacts (engagement — multiple rows per email, one per mailer) -------
+export interface ContactRow {
+  id: number;
+  email: string;
+  mailer_id: string | null;
+  opens: number;
+  clicks: number;
+  optin_status: string | null;
   last_activity_date: string | null;
-  engagement_score: string | null;  // HOT / WARM / COLD (auto)
+  engagement_score: string | null;
 }
 
 // ---- mailers ---------------------------------------------------------------

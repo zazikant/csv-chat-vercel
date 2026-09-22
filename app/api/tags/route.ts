@@ -22,7 +22,7 @@ export async function GET() {
     // Fallback if the RPC isn't defined: fetch all tags arrays and aggregate in JS.
     // (Slower but works without the RPC.)
     const { data: contacts, error: selErr } = await supabase
-      .from("contacts")
+      .from("main_contacts")
       .select("tags")
       .not("tags", "is", null);
 

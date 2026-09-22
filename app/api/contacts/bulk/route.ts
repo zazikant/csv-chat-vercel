@@ -6,54 +6,20 @@ export const runtime = "nodejs";
 /**
  * POST /api/contacts/bulk
  *
- * Body: { rows: Array<Partial<ContactRow>> }
+ * CSV bulk upload for engagement data only (email + mailer_id + opens + clicks + optin_status).
+ * Identity fields (name/company/designation/phone/city/sector/tags) go to main_contacts
+ * via a separate upload or the Main Database tab.
  *
- * Dedup logic (v3 — multiple rows per email allowed):
- *   - The dedup key is (email, mailer_id). If the CSV has a row with an
- *     (email, mailer_id) that already exists in the DB → UPDATE that row.
- *   - If the (email, mailer_id) is new → INSERT a new row.
- *   - If the (email, mailer_id) already exists and ALL fields match exactly → SKIP.
- *   - If the email is NEW and the 4 identity fields (name+company+designation+phone)
- *     match an existing record with a DIFFERENT email → SKIP ("do nothing").
- *
- *   This allows the same email to appear multiple times (one per mailer).
- *   e.g. anil@godrej.com + M001 and anil@godrej.com + M002 are two separate rows.
+ * Dedup key: (email, mailer_id). If it exists → UPDATE. If new → INSERT.
+ * Auto-creates main_contacts rows and mailers as needed.
  */
 
 interface CleanedRow {
   email: string;
-  name: string | null;
-  company: string | null;
-  designation: string | null;
-  phone: string | null;
-  city: string | null;
-  sector: string | null;
-  optin_status: string;
   mailer_id: string | null;
   opens: number;
   clicks: number;
-  tags: string[];
-}
-
-/** Normalize tags: trim + lowercase + dedupe. */
-function normalizeTags(tags: unknown): string[] {
-  if (!Array.isArray(tags)) return [];
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const t of tags) {
-    if (typeof t !== "string") continue;
-    const tag = t.trim().toLowerCase();
-    if (!tag || seen.has(tag)) continue;
-    seen.add(tag);
-    out.push(tag);
-  }
-  return out;
-}
-
-/** Parse tags from a CSV cell: "vip, mumbai, contractor" → ["vip","mumbai","contractor"] */
-function parseTagsCell(raw: string | undefined): string[] {
-  if (!raw) return [];
-  return normalizeTags(raw.split(/[;,]/).map((s) => s.trim()));
+  optin_status: string;
 }
 
 function normalizeStr(v: unknown): string {
@@ -61,343 +27,132 @@ function normalizeStr(v: unknown): string {
   return String(v).trim().toLowerCase();
 }
 
-/** Normalize opt-in status to canonical values. */
 function normalizeOptinStatusValue(raw: string): string {
   const s = (raw || "").trim().toLowerCase().replace(/[-_\s]+/g, " ");
   if (s === "hard bounced" || s === "hardbounced" || s === "hb" || s === "bounced" || s === "hard") return "Hard Bounced";
   if (s === "unsubscribed" || s === "unsub" || s === "opted out" || s === "opt out" || s === "optout") return "Unsubscribed";
-  if (s === "subscribed" || s === "sub" || s === "active" || s === "opted in" || s === "opt in" || s === "optin" || s === "") return "Subscribed";
   return "Subscribed";
-}
-
-/**
- * Canonical string for tags comparison: lowercase, trim, dedupe, sort, join with |.
- */
-function normalizeTagsForCompare(tags: unknown): string {
-  if (!Array.isArray(tags)) return "";
-  const cleaned: string[] = [];
-  const seen = new Set<string>();
-  for (const t of tags) {
-    if (typeof t !== "string") continue;
-    const tag = t.trim().toLowerCase();
-    if (!tag || seen.has(tag)) continue;
-    seen.add(tag);
-    cleaned.push(tag);
-  }
-  cleaned.sort();
-  return cleaned.join("|");
 }
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
   const { rows } = body;
+  if (!Array.isArray(rows) || rows.length === 0) return NextResponse.json({ error: "rows array is required" }, { status: 400 });
+  if (rows.length > 500) return NextResponse.json({ error: "Maximum 500 rows per upload" }, { status: 400 });
 
-  if (!Array.isArray(rows) || rows.length === 0) {
-    return NextResponse.json({ error: "rows array is required" }, { status: 400 });
-  }
-
-  if (rows.length > 500) {
-    return NextResponse.json({ error: "Maximum 500 rows per upload" }, { status: 400 });
-  }
-
-  // Step 1: Validate + clean each row
+  // Step 1: Clean rows
   const cleanedRows: CleanedRow[] = [];
   const mailerIdsToEnsure = new Set<string>();
+  const emailsToEnsure = new Set<string>();
   for (let i = 0; i < rows.length; i++) {
     const r = rows[i] as Record<string, unknown>;
-    if (!r?.email) {
-      return NextResponse.json(
-        { error: `Row ${i + 1} is missing required field: email` },
-        { status: 400 }
-      );
-    }
+    if (!r?.email) return NextResponse.json({ error: `Row ${i + 1} is missing required field: email` }, { status: 400 });
     const cleaned: CleanedRow = {
       email: String(r.email).trim().toLowerCase(),
-      name: r.name ? String(r.name).trim() : null,
-      company: r.company ? String(r.company).trim() : null,
-      designation: r.designation ? String(r.designation).trim() : null,
-      phone: r.phone ? String(r.phone).trim() : null,
-      city: r.city ? String(r.city).trim() : null,
-      sector: r.sector ? String(r.sector).trim() : null,
-      optin_status: normalizeOptinStatusValue(r.optin_status ? String(r.optin_status).trim() : "Subscribed"),
       mailer_id: r.mailer_id ? String(r.mailer_id).trim() : null,
       opens: r.opens == null || r.opens === "" ? 0 : Number(r.opens) || 0,
       clicks: r.clicks == null || r.clicks === "" ? 0 : Number(r.clicks) || 0,
-      tags: Array.isArray(r.tags)
-        ? normalizeTags(r.tags)
-        : parseTagsCell(typeof r.tags === "string" ? r.tags : undefined),
+      optin_status: normalizeOptinStatusValue(r.optin_status ? String(r.optin_status).trim() : "Subscribed"),
     };
     if (cleaned.mailer_id) mailerIdsToEnsure.add(cleaned.mailer_id);
+    emailsToEnsure.add(cleaned.email);
     cleanedRows.push(cleaned);
   }
 
-  // Step 2: Lazily create any mailers that don't exist yet
+  // Step 2: Auto-create mailers
   if (mailerIdsToEnsure.size > 0) {
     const ids = Array.from(mailerIdsToEnsure);
-    const { data: existingMailers, error: selErr } = await supabase
-      .from("mailers")
-      .select("mailer_id")
-      .in("mailer_id", ids);
-    if (selErr) {
-      return NextResponse.json({ error: `Failed to check mailers: ${selErr.message}` }, { status: 500 });
-    }
-    const existingSet = new Set((existingMailers ?? []).map((m: { mailer_id: string }) => m.mailer_id));
-    const toCreate = ids.filter((id) => !existingSet.has(id));
+    const { data: ex } = await supabase.from("mailers").select("mailer_id").in("mailer_id", ids);
+    const exSet = new Set((ex ?? []).map((m: { mailer_id: string }) => m.mailer_id));
+    const toCreate = ids.filter((id) => !exSet.has(id));
     if (toCreate.length > 0) {
-      const { error: insErr } = await supabase
-        .from("mailers")
-        .insert(toCreate.map((id) => ({
-          mailer_id: id,
-          subject_line: `(auto-created from CSV upload — edit in Mailers tab)`,
-          template_name: null,
-          sent_date: null,
-        })));
-      if (insErr) {
-        return NextResponse.json({ error: `Failed to auto-create mailers: ${insErr.message}` }, { status: 500 });
-      }
+      await supabase.from("mailers").insert(toCreate.map((id) => ({
+        mailer_id: id, subject_line: `(auto-created from CSV upload — edit in Mailers tab)`,
+      })));
     }
   }
 
-  // Step 3: Fetch ALL existing contacts (ordered by updated_at desc for identity match)
-  const { data: existingContacts, error: fetchErr } = await supabase
+  // Step 3: Auto-create main_contacts (FK requirement)
+  if (emailsToEnsure.size > 0) {
+    const emails = Array.from(emailsToEnsure);
+    const { data: ex } = await supabase.from("main_contacts").select("email").in("email", emails);
+    const exSet = new Set((ex ?? []).map((m: { email: string }) => m.email.toLowerCase()));
+    const toCreate = emails.filter((e) => !exSet.has(e));
+    if (toCreate.length > 0) {
+      await supabase.from("main_contacts").insert(toCreate.map((e) => ({ email: e })));
+    }
+  }
+
+  // Step 4: Fetch existing contacts for dedup
+  const { data: existing } = await supabase
     .from("contacts")
-    .select("id,email,name,company,designation,phone,mailer_id,tags,opens,clicks,optin_status")
+    .select("id,email,mailer_id,opens,clicks,optin_status")
     .order("updated_at", { ascending: false });
 
-  if (fetchErr) {
-    return NextResponse.json({ error: `Failed to fetch existing contacts: ${fetchErr.message}` }, { status: 500 });
-  }
-
-  // Build lookups:
-  // 1. existingByEmailMailer: (email|mailer_id) → existing record (for dedup by email+mailer)
-  // 2. existingByIdentity: 4-field key → email (for "do nothing" check)
-  const existingByEmailMailer = new Map<string, { id: number; name: string | null; company: string | null; designation: string | null; phone: string | null; mailer_id: string | null; tags: string[] | null; opens: number; clicks: number; optin_status: string | null }>();
-  const existingByIdentity = new Map<string, string>();  // identity-key → email
-  const existingByEmail = new Map<string, { name: string | null; company: string | null; designation: string | null; phone: string | null }>();
-
-  for (const c of existingContacts ?? []) {
-    const email = normalizeStr(c.email);
-    const mailerId = normalizeStr(c.mailer_id);
-    const emailMailerKey = `${email}|${mailerId}`;
-
-    // Keep the latest record per (email, mailer_id) combination
-    if (!existingByEmailMailer.has(emailMailerKey)) {
-      existingByEmailMailer.set(emailMailerKey, {
+  const existingByKey = new Map<string, { id: number; opens: number; clicks: number; optin_status: string | null }>();
+  for (const c of existing ?? []) {
+    const key = `${normalizeStr(c.email)}|${normalizeStr(c.mailer_id)}`;
+    if (!existingByKey.has(key)) {
+      existingByKey.set(key, {
         id: (c as { id: number }).id,
-        name: c.name,
-        company: c.company,
-        designation: c.designation,
-        phone: c.phone,
-        mailer_id: c.mailer_id,
-        tags: c.tags,
         opens: (c as { opens: number }).opens,
         clicks: (c as { clicks: number }).clicks,
         optin_status: c.optin_status,
       });
     }
-
-    // Keep the latest identity fields per email (for auto-fill)
-    if (!existingByEmail.has(email)) {
-      existingByEmail.set(email, {
-        name: c.name,
-        company: c.company,
-        designation: c.designation,
-        phone: c.phone,
-      });
-    }
-
-    // Build identity key for "do nothing" check
-    const identityKey = [
-      normalizeStr(c.name),
-      normalizeStr(c.company),
-      normalizeStr(c.designation),
-      normalizeStr(c.phone),
-    ].join("|");
-    if (!existingByIdentity.has(identityKey) && identityKey !== "|||") {
-      existingByIdentity.set(identityKey, c.email);
-    }
   }
 
-  // Pre-fill blank name/company/designation/phone from the latest existing
-  // record for that email (across ALL mailer rows).
-  for (const row of cleanedRows) {
-    const existing = existingByEmail.get(normalizeStr(row.email));
-    if (!existing) continue;
-    if (!row.name        && existing.name)        row.name        = existing.name;
-    if (!row.company     && existing.company)     row.company     = existing.company;
-    if (!row.designation && existing.designation) row.designation = existing.designation;
-    if (!row.phone       && existing.phone)       row.phone       = existing.phone;
-  }
-
-  // Step 4: Dedup logic
-  const toUpsert: Array<CleanedRow & { _existingId?: number }> = [];
-  const skipped: Array<{ email: string; reason: string }> = [];
-  let updateCount = 0;
-  let insertCount = 0;
-  let identitySkipCount = 0;
-
-  for (const row of cleanedRows) {
-    const emailMailerKey = `${normalizeStr(row.email)}|${normalizeStr(row.mailer_id)}`;
-    const existing = existingByEmailMailer.get(emailMailerKey);
-
-    if (existing) {
-      // (email, mailer_id) already exists → check if all fields match
-      const isExactMatch =
-        normalizeStr(existing.name)        === normalizeStr(row.name)        &&
-        normalizeStr(existing.company)     === normalizeStr(row.company)     &&
-        normalizeStr(existing.designation)  === normalizeStr(row.designation) &&
-        normalizeStr(existing.phone)        === normalizeStr(row.phone)        &&
-        existing.opens                      === row.opens                      &&
-        existing.clicks                     === row.clicks                     &&
-        normalizeStr(existing.optin_status) === normalizeStr(row.optin_status) &&
-        normalizeTagsForCompare(existing.tags) === normalizeTagsForCompare(row.tags);
-
-      if (isExactMatch) {
-        skipped.push({ email: row.email, reason: "exact duplicate — no changes needed" });
-      } else {
-        // UPDATE existing row (by id)
-        toUpsert.push({ ...row, _existingId: existing.id });
-        updateCount++;
-
-        const diffs: string[] = [];
-        if (normalizeStr(existing.name)        !== normalizeStr(row.name))        diffs.push(`name ("${existing.name ?? ""}" → "${row.name ?? ""}")`);
-        if (normalizeStr(existing.company)     !== normalizeStr(row.company))     diffs.push(`company ("${existing.company ?? ""}" → "${row.company ?? ""}")`);
-        if (normalizeStr(existing.designation)  !== normalizeStr(row.designation)) diffs.push(`designation`);
-        if (normalizeStr(existing.phone)        !== normalizeStr(row.phone))       diffs.push(`phone`);
-        if (existing.opens                      !== row.opens)                     diffs.push(`opens (${existing.opens} → ${row.opens})`);
-        if (existing.clicks                     !== row.clicks)                    diffs.push(`clicks (${existing.clicks} → ${row.clicks})`);
-        if (normalizeTagsForCompare(existing.tags) !== normalizeTagsForCompare(row.tags)) {
-          diffs.push(`tags ([${(existing.tags ?? []).join(", ")}] → [${row.tags.join(", ")}])`);
-        }
-        skipped.push({ email: row.email, reason: `updated (${diffs.join(", ")})` });
-      }
-    } else {
-      // (email, mailer_id) is new — check if the 4 identity fields match an
-      // existing record with a DIFFERENT email. If so, SKIP ("do nothing").
-      const identityKey = [
-        normalizeStr(row.name),
-        normalizeStr(row.company),
-        normalizeStr(row.designation),
-        normalizeStr(row.phone),
-      ].join("|");
-      const matchingEmail = existingByIdentity.get(identityKey);
-      if (matchingEmail && normalizeStr(matchingEmail) !== normalizeStr(row.email) && identityKey !== "|||") {
-        identitySkipCount++;
-        skipped.push({
-          email: row.email,
-          reason: `skipped — same name/company/designation/phone as existing ${matchingEmail} (different email, doing nothing)`,
-        });
-      } else {
-        // Brand new contact — INSERT
-        toUpsert.push(row);
-        insertCount++;
-      }
-    }
-  }
-
-  // Step 5: De-duplicate toUpsert by (email, mailer_id) — if the CSV itself
-  // has multiple rows with the same (email, mailer_id), keep the last one.
-  const upsertByKey = new Map<string, CleanedRow & { _existingId?: number }>();
-  const intraCsvDupes: { email: string; reason: string }[] = [];
-  for (const row of toUpsert) {
-    const key = `${normalizeStr(row.email)}|${normalizeStr(row.mailer_id)}`;
-    if (upsertByKey.has(key)) {
-      intraCsvDupes.push({
-        email: row.email,
-        reason: "duplicate (email, mailer_id) in CSV — earlier row skipped, later row wins",
-      });
-    }
-    upsertByKey.set(key, row);
-  }
-
-  // Step 6: Perform inserts and updates separately (updates need the id)
-  let upsertedCount = 0;
-  let upsertErr: string | null = null;
-
+  // Step 5: Dedup
   const toInsert: CleanedRow[] = [];
   const toUpdate: Array<{ id: number; data: CleanedRow }> = [];
-  for (const row of upsertByKey.values()) {
-    if (row._existingId) {
-      const { _existingId, ...data } = row;
-      toUpdate.push({ id: _existingId, data });
+  const skipped: Array<{ email: string; reason: string }> = [];
+  for (const row of cleanedRows) {
+    const key = `${normalizeStr(row.email)}|${normalizeStr(row.mailer_id)}`;
+    const ex = existingByKey.get(key);
+    if (ex) {
+      const isExact = ex.opens === row.opens && ex.clicks === row.clicks && normalizeStr(ex.optin_status) === normalizeStr(row.optin_status);
+      if (isExact) {
+        skipped.push({ email: row.email, reason: "exact duplicate — no changes needed" });
+      } else {
+        toUpdate.push({ id: ex.id, data: row });
+        skipped.push({ email: row.email, reason: `updated (opens ${ex.opens}→${row.opens}, clicks ${ex.clicks}→${row.clicks})` });
+      }
     } else {
-      const { _existingId, ...data } = row;
-      toInsert.push(data);
+      toInsert.push(row);
     }
   }
 
-  // Insert new rows
-  if (toInsert.length > 0) {
-    const { error: insErr } = await supabase.from("contacts").insert(toInsert);
-    if (insErr) upsertErr = insErr.message;
-    else upsertedCount += toInsert.length;
+  // Step 6: De-duplicate intra-CSV by (email, mailer_id)
+  const insertByKey = new Map<string, CleanedRow>();
+  let intraDupes = 0;
+  for (const row of toInsert) {
+    const key = `${normalizeStr(row.email)}|${normalizeStr(row.mailer_id)}`;
+    if (insertByKey.has(key)) { intraDupes++; skipped.push({ email: row.email, reason: "duplicate (email, mailer_id) in CSV — later row wins" }); }
+    insertByKey.set(key, row);
   }
 
-  // Update existing rows (one by one, since each has a different id)
+  // Step 7: Insert + Update
+  let upsertedCount = 0;
+  let upsertErr: string | null = null;
+  if (insertByKey.size > 0) {
+    const { error: insErr } = await supabase.from("contacts").insert(Array.from(insertByKey.values()));
+    if (insErr) upsertErr = insErr.message; else upsertedCount += insertByKey.size;
+  }
   if (!upsertErr && toUpdate.length > 0) {
     for (const u of toUpdate) {
-      const { error: updErr } = await supabase
-        .from("contacts")
-        .update(u.data)
-        .eq("id", u.id);
+      const { error: updErr } = await supabase.from("contacts").update(u.data).eq("id", u.id);
       if (updErr) { upsertErr = updErr.message; break; }
       upsertedCount++;
     }
   }
-
-  // Step 7: Sync identity fields across all rows with the same email.
-  // For each email that was touched (inserted or updated), propagate the
-  // latest name/company/designation/phone values to ALL rows with that email.
-  // This ensures that when you update one row's identity via CSV, all other
-  // rows for the same email get the same values.
-  if (!upsertErr) {
-    // Build a map: email → latest identity fields (from all touched rows)
-    const emailToLatestIdentity = new Map<string, { name: string | null; company: string | null; designation: string | null; phone: string | null }>();
-    for (const row of [...toInsert, ...toUpdate.map((u) => u.data)]) {
-      const emailKey = row.email.toLowerCase();
-      // Only update if the row has a non-null value for the identity field
-      // (don't overwrite a good value with null from a sparse CSV row).
-      const existing = emailToLatestIdentity.get(emailKey) ?? { name: null, company: null, designation: null, phone: null };
-      if (row.name)        existing.name        = row.name;
-      if (row.company)     existing.company     = row.company;
-      if (row.designation) existing.designation = row.designation;
-      if (row.phone)       existing.phone       = row.phone;
-      emailToLatestIdentity.set(emailKey, existing);
-    }
-
-    // For each email, update ALL rows with that email to have the latest identity fields
-    for (const [email, identity] of emailToLatestIdentity) {
-      // Only sync if at least one identity field is non-null
-      if (!identity.name && !identity.company && !identity.designation && !identity.phone) continue;
-      const { error: syncErr } = await supabase
-        .from("contacts")
-        .update({
-          name: identity.name,
-          company: identity.company,
-          designation: identity.designation,
-          phone: identity.phone,
-        })
-        .eq("email", email);
-      if (syncErr) {
-        console.warn(`[bulk] failed to sync identity fields for ${email}: ${syncErr.message}`);
-        // non-fatal
-      }
-    }
-  }
-
-  if (upsertErr) {
-    return NextResponse.json({ error: upsertErr }, { status: 500 });
-  }
-
-  for (const d of intraCsvDupes) skipped.push(d);
+  if (upsertErr) return NextResponse.json({ error: upsertErr }, { status: 500 });
 
   return NextResponse.json({
-    inserted: toInsert.length,
+    inserted: insertByKey.size,
     updated: toUpdate.length,
     upserted: upsertedCount,
     skipped: skipped.filter((s) => s.reason.startsWith("exact")).length,
-    identitySkipped: identitySkipCount,
-    intraCsvDuplicates: intraCsvDupes.length,
+    intraCsvDuplicates: intraDupes,
     skippedRows: skipped,
     total: cleanedRows.length,
   }, { status: 201 });

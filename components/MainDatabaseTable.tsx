@@ -1,44 +1,47 @@
 "use client";
 
 import { useState } from "react";
-import { ContactRow } from "@/lib/langgraph/state";
+import { MainContactRow } from "@/lib/langgraph/state";
 
-const ALL_COLUMNS: { key: keyof ContactRow; label: string }[] = [
-  { key: "email",             label: "Email" },
-  { key: "mailer_id",         label: "Mailer" },
-  { key: "opens",             label: "Opens" },
-  { key: "clicks",            label: "Clicks" },
-  { key: "optin_status",      label: "Opt-in" },
-  { key: "last_activity_date", label: "Last Activity" },
-  { key: "engagement_score",  label: "Engagement" },
+const ALL_COLUMNS: { key: keyof MainContactRow; label: string }[] = [
+  { key: "name",        label: "Name" },
+  { key: "company",     label: "Company" },
+  { key: "designation", label: "Designation" },
+  { key: "email",       label: "Email" },
+  { key: "phone",       label: "Phone" },
+  { key: "city",        label: "City" },
+  { key: "sector",      label: "Sector" },
+  { key: "tags",        label: "Tags" },
 ];
 
-const VISIBLE_COLUMNS: (keyof ContactRow)[] = [
-  "email", "mailer_id", "opens", "clicks",
-  "optin_status", "last_activity_date", "engagement_score",
+const VISIBLE_COLUMNS: (keyof MainContactRow)[] = [
+  "name", "company", "designation", "email", "phone", "city", "sector", "tags",
 ];
+
+const TOTAL_MAILS_SENT_KEY = "_total_mails_sent" as keyof MainContactRow;
 
 const PAGE_SIZE = 25;
-const SEARCHABLE_COLUMNS: (keyof ContactRow)[] = [
-  "email", "optin_status", "engagement_score", "mailer_id",
+const SEARCHABLE_COLUMNS: (keyof MainContactRow)[] = [
+  "name", "company", "designation", "email", "phone", "city", "sector", "tags",
 ];
 
 interface Props {
-  rows: ContactRow[];
+  rows: MainContactRow[];
+  totalMailsSent: Map<string, number>;
   page: number;
   onPageChange: (page: number) => void;
   onReset?: () => void;
-  onEdit: (row: ContactRow) => void;
+  onEdit: (row: MainContactRow) => void;
   onAdd: () => void;
   onUpload: () => void;
   onBulkDelete: () => void;
-  onDeleteRows: (ids: string[]) => void;
+  onDeleteRows: (emails: string[]) => void;
 }
 
-export default function ContactsTable({
-  rows, page, onPageChange, onReset, onEdit, onAdd, onUpload, onBulkDelete, onDeleteRows,
+export default function MainDatabaseTable({
+  rows, totalMailsSent, page, onPageChange, onReset, onEdit, onAdd, onUpload, onBulkDelete, onDeleteRows,
 }: Props) {
-  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [selected, setSelected] = useState<Set<string>>(new Set());
   const [searchTerm, setSearchTerm] = useState("");
 
   const filteredRows = searchTerm.trim()
@@ -46,6 +49,11 @@ export default function ContactsTable({
         SEARCHABLE_COLUMNS.some((col) => {
           const val = row[col];
           if (val === null || val === undefined) return false;
+          if (col === "tags") {
+            const tags = val as unknown as string[];
+            if (!Array.isArray(tags)) return false;
+            return tags.some((t) => typeof t === "string" && t.toLowerCase().includes(searchTerm.toLowerCase()));
+          }
           return String(val).toLowerCase().includes(searchTerm.toLowerCase());
         })
       )
@@ -53,79 +61,80 @@ export default function ContactsTable({
 
   const totalPages = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
   const paginated = filteredRows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-  const visibleCols = ALL_COLUMNS.filter((c) => VISIBLE_COLUMNS.includes(c.key));
-  const allOnPage = paginated.map((r) => r.id);
-  const allSelected = allOnPage.length > 0 && allOnPage.every((id) => selected.has(id));
-  const someSelected = allOnPage.some((id) => selected.has(id));
+  const visibleCols = [...ALL_COLUMNS, { key: TOTAL_MAILS_SENT_KEY, label: "Total Mails Sent" }];
+  const allOnPage = paginated.map((r) => r.email);
+  const allSelected = allOnPage.length > 0 && allOnPage.every((e) => selected.has(e));
+  const someSelected = allOnPage.some((e) => selected.has(e));
 
   function toggleAll() {
     setSelected((prev) => {
       const next = new Set(prev);
-      if (allSelected) allOnPage.forEach((id) => next.delete(id));
-      else allOnPage.forEach((id) => next.add(id));
+      if (allSelected) allOnPage.forEach((e) => next.delete(e));
+      else allOnPage.forEach((e) => next.add(e));
       return next;
     });
   }
-  function toggleRow(id: number) {
-    setSelected((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  function toggleRow(email: string) {
+    setSelected((prev) => { const n = new Set(prev); if (n.has(email)) n.delete(email); else n.add(email); return n; });
   }
   function handleBulkDelete() {
     if (selected.size === 0) return;
-    if (!confirm(`Delete ${selected.size} selected record${selected.size > 1 ? "s" : ""}?`)) return;
-    onDeleteRows(Array.from(selected).map(String));
+    if (!confirm(`Delete ${selected.size} selected record${selected.size > 1 ? "s" : ""}? This will also delete their engagement rows.`)) return;
+    onDeleteRows(Array.from(selected));
     setSelected(new Set());
   }
   function downloadCSV() {
-    const headers = ALL_COLUMNS.map((c) => c.label);
+    const headers = [...ALL_COLUMNS.map((c) => c.label), "Total Mails Sent"];
     const rowsData = filteredRows.map((row) =>
-      ALL_COLUMNS.map((c) => {
+      [...ALL_COLUMNS.map((c) => {
         const val = row[c.key];
         if (val === null || val === undefined) return "";
+        if (c.key === "tags") {
+          const tags = val as unknown as string[];
+          if (!Array.isArray(tags) || tags.length === 0) return "";
+          return `"${tags.join(", ")}"`;
+        }
         if (typeof val === "string" && val.includes(",")) return `"${val}"`;
         return String(val);
-      })
+      }), String(totalMailsSent.get(row.email.toLowerCase()) ?? 0)]
     );
     const csv = [headers, ...rowsData].map((r) => r.join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `contacts_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `main_database_${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   }
-  function formatValue(row: ContactRow, key: keyof ContactRow): React.ReactNode {
+
+  function formatValue(row: MainContactRow, key: keyof MainContactRow): React.ReactNode {
+    if (key === TOTAL_MAILS_SENT_KEY) {
+      const count = totalMailsSent.get(row.email.toLowerCase()) ?? 0;
+      return <span className="font-mono font-medium text-purple-700">{count}</span>;
+    }
     const val = row[key];
     if (val === null || val === undefined) return "—";
-    if (key === "last_activity_date") {
-      try {
-        const d = new Date(String(val));
-        if (isNaN(d.getTime())) return String(val);
-        return d.toLocaleString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
-      } catch { return String(val); }
+    if (key === "tags") {
+      const tags = val as unknown as string[];
+      if (!Array.isArray(tags) || tags.length === 0) return <span className="text-gray-300">—</span>;
+      return (
+        <div className="flex gap-1 flex-wrap">
+          {tags.slice(0, 3).map((t) => (
+            <span key={t} className="text-[10px] bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded">{t}</span>
+          ))}
+          {tags.length > 3 && <span className="text-[10px] text-gray-400">+{tags.length - 3}</span>}
+        </div>
+      );
     }
     return String(val);
   }
-  function getCellClass(key: keyof ContactRow, val: unknown): string {
+
+  function getCellClass(key: keyof MainContactRow, val: unknown): string {
+    if (key === TOTAL_MAILS_SENT_KEY) return "text-right font-mono";
     if (val === null || val === undefined) return "text-gray-300";
     if (key === "email") return "text-blue-600";
-    if (key === "engagement_score") {
-      const s = String(val);
-      if (s === "HOT") return "text-red-600 font-medium";
-      if (s === "WARM") return "text-orange-500 font-medium";
-      if (s === "COLD") return "text-gray-400";
-    }
-    if (key === "optin_status") {
-      const s = String(val);
-      if (s === "Subscribed") return "text-green-600";
-      if (s === "Unsubscribed") return "text-red-500";
-      if (s === "Hard Bounced") return "text-orange-600";
-    }
-    if (key === "mailer_id") return val ? "text-gray-600 font-mono text-xs" : "text-gray-300";
-    if (key === "opens" || key === "clicks") {
-      const n = Number(val);
-      return n > 0 ? "text-right font-mono text-gray-700" : "text-right font-mono text-gray-300";
-    }
+    if (key === "tags") return "";
     return "text-gray-700";
   }
 
@@ -134,9 +143,9 @@ export default function ContactsTable({
       <div className="px-2 sm:px-4 py-2 sm:py-3 border-b border-gray-200 bg-white space-y-2">
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <div className="flex items-center gap-2 flex-wrap">
-            <h2 className="text-sm font-semibold text-gray-700">Contacts</h2>
+            <h2 className="text-sm font-semibold text-gray-700">Main Database</h2>
             <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">
-              {filteredRows.length} {filteredRows.length === 1 ? "record" : "records"}
+              {filteredRows.length} {filteredRows.length === 1 ? "contact" : "contacts"}
             </span>
             {selected.size > 0 && (
               <span className="text-xs bg-orange-100 text-orange-600 px-2 py-0.5 rounded-full">{selected.size} selected</span>
@@ -167,7 +176,7 @@ export default function ContactsTable({
       <div className="flex-1 overflow-auto">
         {filteredRows.length === 0 ? (
           <div className="flex items-center justify-center h-full text-sm text-gray-400">
-            {searchTerm ? "No records match your search." : "No contacts yet."}
+            {searchTerm ? "No contacts match your search." : "No contacts yet. Click 'Add' or 'Upload' to get started."}
           </div>
         ) : (
           <table className="min-w-max text-sm border-collapse">
@@ -183,18 +192,18 @@ export default function ContactsTable({
             </thead>
             <tbody>
               {paginated.map((row, i) => (
-                <tr key={row.id} onDoubleClick={() => onEdit(row)} className={`border-b border-gray-100 hover:bg-blue-50 cursor-pointer transition-colors ${i % 2 === 0 ? "bg-white" : "bg-gray-50/30"} ${selected.has(row.id) ? "bg-orange-50" : ""}`}>
+                <tr key={row.email} onDoubleClick={() => onEdit(row)} className={`border-b border-gray-100 hover:bg-blue-50 cursor-pointer transition-colors ${i % 2 === 0 ? "bg-white" : "bg-gray-50/30"} ${selected.has(row.email) ? "bg-orange-50" : ""}`}>
                   <td className="px-3 py-2 sticky left-0 bg-inherit z-10">
-                    <input type="checkbox" checked={selected.has(row.id)} onChange={() => toggleRow(row.id)} onClick={(e) => e.stopPropagation()} className="w-4 h-4 rounded border-gray-300 text-blue-600 cursor-pointer" />
+                    <input type="checkbox" checked={selected.has(row.email)} onChange={() => toggleRow(row.email)} onClick={(e) => e.stopPropagation()} className="w-4 h-4 rounded border-gray-300 text-blue-600 cursor-pointer" />
                   </td>
                   {visibleCols.map((col) => {
-                    const val = row[col.key as keyof ContactRow];
+                    const val = col.key === TOTAL_MAILS_SENT_KEY ? undefined : row[col.key as keyof MainContactRow];
                     return (
-                      <td key={String(col.key)} className={`px-4 py-2.5 whitespace-nowrap ${getCellClass(col.key as keyof ContactRow, val)}`}>
+                      <td key={String(col.key)} className={`px-4 py-2.5 whitespace-nowrap ${getCellClass(col.key, col.key === TOTAL_MAILS_SENT_KEY ? undefined : val)}`}>
                         {col.key === "email" && val ? (
-                          <a href={`mailto:${val}`} onClick={(e) => e.stopPropagation()} className="hover:underline">{formatValue(row, col.key as keyof ContactRow)}</a>
+                          <a href={`mailto:${val}`} onClick={(e) => e.stopPropagation()} className="hover:underline">{formatValue(row, col.key)}</a>
                         ) : (
-                          formatValue(row, col.key as keyof ContactRow)
+                          formatValue(row, col.key)
                         )}
                       </td>
                     );
@@ -207,7 +216,7 @@ export default function ContactsTable({
       </div>
 
       <div className="flex items-center justify-between px-2 sm:px-4 py-2.5 border-t border-gray-200 bg-gray-50 text-xs text-gray-500">
-        <p>{filteredRows.length === 0 ? "No records" : `Showing ${Math.min((page - 1) * PAGE_SIZE + 1, filteredRows.length)}–${Math.min(page * PAGE_SIZE, filteredRows.length)} of ${filteredRows.length}`}</p>
+        <p>{filteredRows.length === 0 ? "No contacts" : `Showing ${Math.min((page - 1) * PAGE_SIZE + 1, filteredRows.length)}–${Math.min(page * PAGE_SIZE, filteredRows.length)} of ${filteredRows.length}`}</p>
         <div className="flex items-center gap-1">
           <button onClick={() => onPageChange(1)} disabled={page === 1} className="w-7 h-7 flex items-center justify-center rounded hover:bg-gray-200 disabled:opacity-30 transition-colors"><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" /></svg></button>
           <button onClick={() => onPageChange(Math.max(1, page - 1))} disabled={page === 1} className="w-7 h-7 flex items-center justify-center rounded hover:bg-gray-200 disabled:opacity-30 transition-colors"><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg></button>

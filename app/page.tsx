@@ -2,25 +2,31 @@
 
 import { useState, useEffect } from "react";
 import { v4 as uuidv4 } from "uuid";
+import MainDatabaseTable from "@/components/MainDatabaseTable";
 import ContactsTable from "@/components/ContactsTable";
 import MailersTable from "@/components/MailersTable";
 import ChatPanel from "@/components/ChatPanel";
 import EditModal from "@/components/EditModal";
+import MainEditModal from "@/components/MainEditModal";
 import MailerEditModal from "@/components/MailerEditModal";
 import CSVUploadModal from "@/components/CSVUploadModal";
 import BulkDeleteModal from "@/components/BulkDeleteModal";
 import SqlQueryBox from "@/components/SqlQueryBox";
-import { ContactRow, MailerRow } from "@/lib/langgraph/state";
+import { MainContactRow, ContactRow, MailerRow } from "@/lib/langgraph/state";
 
 type TabKey = "main" | "contacts" | "mailers";
 type MobileView = "table" | "chat";
 
+async function fetchMainContacts(): Promise<MainContactRow[]> {
+  const res = await fetch("/api/main-contacts");
+  if (!res.ok) return [];
+  return res.json();
+}
 async function fetchAllContacts(): Promise<ContactRow[]> {
   const res = await fetch("/api/contacts");
   if (!res.ok) return [];
   return res.json();
 }
-
 async function fetchAllMailers(): Promise<MailerRow[]> {
   const res = await fetch("/api/mailers");
   if (!res.ok) return [];
@@ -28,255 +34,146 @@ async function fetchAllMailers(): Promise<MailerRow[]> {
 }
 
 export default function HomePage() {
-  const [sessionId]         = useState(() => uuidv4());
-  const [tab, setTab]       = useState<TabKey>("main");
-  // On narrow screens, only one of (table, chat) is shown at a time.
-  // On wide screens (md+), both are shown side-by-side and mobileView is ignored.
+  const [sessionId] = useState(() => uuidv4());
+  const [tab, setTab] = useState<TabKey>("main");
   const [mobileView, setMobileView] = useState<MobileView>("table");
 
-  // Contacts state (shared between Main Database and Contacts tabs — both
-  // show the same data, just with different columns)
-  const [rows, setRows]         = useState<ContactRow[]>([]);
-  const [allRows, setAllRows]   = useState<ContactRow[]>([]);
-  const [isFiltered, setFiltered] = useState(false);
-  const [contactPage, setContactPage] = useState(1);
+  // Main contacts (identity)
+  const [mainRows, setMainRows] = useState<MainContactRow[]>([]);
   const [mainPage, setMainPage] = useState(1);
 
-  // Mailers state
+  // Contacts (engagement)
+  const [contactRows, setContactRows] = useState<ContactRow[]>([]);
+  const [contactPage, setContactPage] = useState(1);
+
+  // Mailers
   const [mailers, setMailers] = useState<MailerRow[]>([]);
   const [mailerPage, setMailerPage] = useState(1);
 
   // Modals
+  const [mainEditRecord, setMainEditRecord] = useState<MainContactRow | null>(null);
+  const [mainEditMode, setMainEditMode] = useState<"add" | "edit">("edit");
   const [editRecord, setEditRecord] = useState<ContactRow | null>(null);
-  const [editMode, setEditMode]     = useState<"add" | "edit">("edit");
+  const [editMode, setEditMode] = useState<"add" | "edit">("edit");
   const [mailerRecord, setMailerRecord] = useState<MailerRow | null>(null);
-  const [mailerMode, setMailerMode]     = useState<"add" | "edit">("edit");
+  const [mailerMode, setMailerMode] = useState<"add" | "edit">("edit");
   const [showUpload, setShowUpload] = useState(false);
   const [showBulkDelete, setShowBulkDelete] = useState(false);
 
-  // ---------- Contacts handlers ----------
+  // Compute Total Mails Sent per email (from engagement rows with non-null mailer_id)
+  const totalMailsSent = new Map<string, number>();
+  for (const c of contactRows) {
+    if (c.mailer_id) {
+      const key = c.email.toLowerCase();
+      totalMailsSent.set(key, (totalMailsSent.get(key) ?? 0) + 1);
+    }
+  }
+
+  function reloadMain() { fetchMainContacts().then(setMainRows); }
+  function reloadContacts() { fetchAllContacts().then(setContactRows); }
+  function reloadMailers() { fetchAllMailers().then(setMailers); }
+
+  useEffect(() => { reloadMain(); reloadContacts(); reloadMailers(); }, []);
+
+  // Main Database handlers
+  async function handleDeleteMainRows(emails: string[]) {
+    await fetch("/api/main-contacts", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ emails }) });
+    reloadMain(); reloadContacts();
+  }
+  async function handleBulkDeleteMain(emails: string[]): Promise<{ deleted: number; notFound: string[] }> {
+    const unique = Array.from(new Set(emails.map((e) => e.toLowerCase())));
+    const existing = new Set(mainRows.map((r) => r.email.toLowerCase()));
+    const toDelete = unique.filter((e) => existing.has(e));
+    const notFound = unique.filter((e) => !existing.has(e));
+    if (toDelete.length > 0) {
+      await fetch("/api/main-contacts", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ emails: toDelete }) });
+      reloadMain(); reloadContacts();
+    }
+    return { deleted: toDelete.length, notFound };
+  }
+
+  // Contacts handlers
   async function handleDeleteRows(ids: string[]) {
-    await fetch("/api/contacts", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ids }),
-    });
+    await fetch("/api/contacts", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids }) });
     reloadContacts();
   }
-
-  function handleTableUpdate(newRows: ContactRow[]) {
-    setRows(newRows);
-    setFiltered(true);
-    setContactPage(1);
-  }
-
-  /** Receive rows from the SQL Query Box (paste-your-own SQL flow).
-   *  The result replaces whatever table is currently active (Main Database, Contacts, or Mailers).
-   */
-  function handleSqlResult(rows: Record<string, unknown>[]) {
-    if (tab === "contacts" || tab === "main") {
-      setRows(rows as unknown as ContactRow[]);
-      setFiltered(true);
-      setContactPage(1);
-      setMainPage(1);
-    } else {
-      setMailers(rows as unknown as MailerRow[]);
-    }
-    setMailerPage(1);
-    setMobileView("table");
-  }
-
-  function handleReset() {
-    setRows(allRows);
-    setFiltered(false);
-    setContactPage(1);
-  }
-
-  /** Reset Mailers view back to the full list (after a SQL query replaced it). */
-  function handleResetMailers() {
-    reloadMailers();
-    setMailerPage(1);
-  }
-
-  function handleEdit(row: ContactRow) {
-    setEditRecord(row);
-    setEditMode("edit");
-  }
-
-  function handleAdd() {
-    setEditRecord(null);
-    setEditMode("add");
-  }
-
-  function handleModalClose() {
-    setEditRecord(null);
-    setEditMode("edit");
-  }
-
-  function reloadContacts() {
-    fetchAllContacts().then((data) => {
-      setRows(data);
-      setAllRows(data);
-      setFiltered(false);
-      setContactPage(1);
-    });
-  }
-
-  // ---------- Mailers handlers ----------
-  async function handleDeleteMailers(ids: string[]) {
-    await fetch("/api/mailers", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mailer_ids: ids }),
-    });
-    reloadMailers();
-  }
-
-  /**
-   * Bulk-delete contacts by email. Since multiple rows per email are now allowed,
-   * deleting by email removes ALL rows with that email (across all mailers).
-   */
   async function handleBulkDeleteContacts(emails: string[]): Promise<{ deleted: number; notFound: string[] }> {
-    const uniqueEmails = Array.from(new Set(emails));
-    const res = await fetch("/api/contacts");
-    const allContacts: ContactRow[] = res.ok ? await res.json() : [];
-    const existingEmails = new Set(allContacts.map((c) => c.email.toLowerCase()));
-    const toDelete = uniqueEmails.filter((e) => existingEmails.has(e.toLowerCase()));
-    const notFound = uniqueEmails.filter((e) => !existingEmails.has(e.toLowerCase()));
-
+    // Delete by email (removes ALL engagement rows for that email)
+    const unique = Array.from(new Set(emails.map((e) => e.toLowerCase())));
+    const existingEmails = new Set(contactRows.map((r) => r.email.toLowerCase()));
+    const toDelete = unique.filter((e) => existingEmails.has(e));
+    const notFound = unique.filter((e) => !existingEmails.has(e));
     if (toDelete.length > 0) {
-      // Fetch all rows (ids) with those emails, then delete by id
-      const { data: rowsToDelete } = await fetch(`/api/contacts`).then((r) => r.json()).then((rows: ContactRow[]) => ({
-        data: rows.filter((r: ContactRow) => toDelete.includes(r.email.toLowerCase())).map((r: ContactRow) => r.id),
-      }));
-      const ids = (rowsToDelete ?? []) as number[];
+      const ids = contactRows.filter((r) => toDelete.includes(r.email.toLowerCase())).map((r) => r.id);
       if (ids.length > 0) {
-        await fetch("/api/contacts", {
-          method: "DELETE",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ids }),
-        });
+        await fetch("/api/contacts", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids }) });
         reloadContacts();
       }
     }
     return { deleted: toDelete.length, notFound };
   }
 
-  /**
-   * Bulk-delete mailers by mailer_id. Same pattern as contacts — fetch
-   * existing first, delete the ones that match, report not-found.
-   */
+  // Mailers handlers
+  async function handleDeleteMailers(ids: string[]) {
+    await fetch("/api/mailers", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mailer_ids: ids }) });
+    reloadMailers();
+  }
   async function handleBulkDeleteMailers(mailerIds: string[]): Promise<{ deleted: number; notFound: string[] }> {
-    const uniqueIds = Array.from(new Set(mailerIds));
-    const res = await fetch("/api/mailers");
-    const allMailers: MailerRow[] = res.ok ? await res.json() : [];
-    const existingIds = new Set(allMailers.map((m) => m.mailer_id));
-    const toDelete = uniqueIds.filter((id) => existingIds.has(id));
-    const notFound = uniqueIds.filter((id) => !existingIds.has(id));
-
+    const unique = Array.from(new Set(mailerIds));
+    const existing = new Set(mailers.map((m) => m.mailer_id));
+    const toDelete = unique.filter((id) => existing.has(id));
+    const notFound = unique.filter((id) => !existing.has(id));
     if (toDelete.length > 0) {
-      await fetch("/api/mailers", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mailer_ids: toDelete }),
-      });
+      await fetch("/api/mailers", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mailer_ids: toDelete }) });
       reloadMailers();
     }
     return { deleted: toDelete.length, notFound };
   }
 
-  function reloadMailers() {
-    fetchAllMailers().then(setMailers);
+  function handleSqlResult(rows: Record<string, unknown>[]) {
+    if (tab === "main") { setMainRows(rows as unknown as MainContactRow[]); setMainPage(1); }
+    else if (tab === "contacts") { setContactRows(rows as unknown as ContactRow[]); setContactPage(1); }
+    else { setMailers(rows as unknown as MailerRow[]); setMailerPage(1); }
+    setMobileView("table");
   }
-
-  function handleEditMailer(row: MailerRow) {
-    setMailerRecord(row);
-    setMailerMode("edit");
-  }
-
-  function handleAddMailer() {
-    setMailerRecord(null);
-    setMailerMode("add");
-  }
-
-  function handleMailerModalClose() {
-    setMailerRecord(null);
-    setMailerMode("edit");
-  }
-
-  // ---------- Initial load ----------
-  useEffect(() => {
-    reloadContacts();
-    reloadMailers();
-  }, []);
 
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
-      {/* Main table area — full-width on mobile, flex-1 on md+ */}
-      <div className={`flex-1 flex flex-col border-r border-gray-200 min-w-0 overflow-hidden ${
-        mobileView === "chat" ? "hidden md:flex" : "flex"
-      }`}>
-        {/* Tab bar — horizontally scrollable on mobile to fit 3 tabs + chat button */}
-        <div className="flex-shrink-0 flex items-center gap-1 px-2 sm:px-4 pt-3 bg-white border-b border-gray-200 overflow-x-auto whitespace-nowrap scrollbar-thin">
-          <TabButton
-            label="Main Database"
-            count={allRows.length}
-            active={tab === "main"}
-            onClick={() => setTab("main")}
-          />
-          <TabButton
-            label="Contacts"
-            count={allRows.length}
-            active={tab === "contacts"}
-            onClick={() => setTab("contacts")}
-          />
-          <TabButton
-            label="Mailers"
-            count={mailers.length}
-            active={tab === "mailers"}
-            onClick={() => setTab("mailers")}
-          />
-          {/* Mobile-only: chat toggle button */}
-          <button
-            onClick={() => setMobileView("chat")}
-            className="ml-auto flex-shrink-0 md:hidden flex items-center gap-1.5 px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
-            title="Open chat"
-          >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-            </svg>
+      <div className={`flex-1 flex flex-col border-r border-gray-200 min-w-0 overflow-hidden ${mobileView === "chat" ? "hidden md:flex" : "flex"}`}>
+        <div className="flex items-center gap-1 px-2 sm:px-4 pt-3 bg-white border-b border-gray-200 overflow-x-auto whitespace-nowrap flex-shrink-0">
+          <TabButton label="Main Database" count={mainRows.length} active={tab === "main"} onClick={() => setTab("main")} />
+          <TabButton label="Contacts" count={contactRows.length} active={tab === "contacts"} onClick={() => setTab("contacts")} />
+          <TabButton label="Mailers" count={mailers.length} active={tab === "mailers"} onClick={() => setTab("mailers")} />
+          <button onClick={() => setMobileView("chat")} className="ml-auto flex-shrink-0 md:hidden flex items-center gap-1.5 px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors">
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>
             Chat
           </button>
         </div>
 
-        {/* SQL Query Box — paste-your-own SQL (visible on both tabs) */}
         <SqlQueryBox onRun={handleSqlResult} />
 
-        {/* Tab body */}
         <div className="flex-1 overflow-hidden">
           {tab === "main" ? (
-            <ContactsTable
-              rows={rows}
-              isFiltered={isFiltered}
+            <MainDatabaseTable
+              rows={mainRows}
+              totalMailsSent={totalMailsSent}
               page={mainPage}
               onPageChange={setMainPage}
-              onReset={handleReset}
-              onEdit={handleEdit}
-              onAdd={handleAdd}
+              onReset={reloadMain}
+              onEdit={(r) => { setMainEditRecord(r); setMainEditMode("edit"); }}
+              onAdd={() => { setMainEditRecord(null); setMainEditMode("add"); }}
               onUpload={() => setShowUpload(true)}
               onBulkDelete={() => setShowBulkDelete(true)}
-              onDeleteRows={handleDeleteRows}
-              showTotalMailsSent
+              onDeleteRows={handleDeleteMainRows}
             />
           ) : tab === "contacts" ? (
             <ContactsTable
-              rows={rows}
-              isFiltered={isFiltered}
+              rows={contactRows}
               page={contactPage}
               onPageChange={setContactPage}
-              onReset={handleReset}
-              onEdit={handleEdit}
-              onAdd={handleAdd}
+              onReset={reloadContacts}
+              onEdit={(r) => { setEditRecord(r); setEditMode("edit"); }}
+              onAdd={() => { setEditRecord(null); setEditMode("add"); }}
               onUpload={() => setShowUpload(true)}
               onBulkDelete={() => setShowBulkDelete(true)}
               onDeleteRows={handleDeleteRows}
@@ -286,9 +183,9 @@ export default function HomePage() {
               rows={mailers}
               page={mailerPage}
               onPageChange={setMailerPage}
-              onReset={handleResetMailers}
-              onEdit={handleEditMailer}
-              onAdd={handleAddMailer}
+              onReset={reloadMailers}
+              onEdit={(r) => { setMailerRecord(r); setMailerMode("edit"); }}
+              onAdd={() => { setMailerRecord(null); setMailerMode("add"); }}
               onBulkDelete={() => setShowBulkDelete(true)}
               onDeleteRows={handleDeleteMailers}
             />
@@ -296,103 +193,51 @@ export default function HomePage() {
         </div>
       </div>
 
-      {/* Chat panel — fixed width on md+, full-width overlay on mobile */}
-      <div className={`flex flex-col overflow-hidden shadow-lg ${
-        mobileView === "chat"
-          ? "flex w-full md:w-[400px] md:flex-shrink-0"
-          : "hidden md:flex md:w-[400px] md:flex-shrink-0"
-      }`}>
-        {/* Mobile-only: back button in chat header */}
+      <div className={`flex flex-col overflow-hidden shadow-lg ${mobileView === "chat" ? "flex w-full md:w-[400px] md:flex-shrink-0" : "hidden md:flex md:w-[400px] md:flex-shrink-0"}`}>
         <div className="md:hidden flex items-center justify-between px-4 py-2 border-b border-gray-200 bg-white">
-          <button
-            onClick={() => setMobileView("table")}
-            className="flex items-center gap-1.5 text-xs text-gray-600 hover:text-gray-900 transition-colors"
-          >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-            </svg>
+          <button onClick={() => setMobileView("table")} className="flex items-center gap-1.5 text-xs text-gray-600 hover:text-gray-900 transition-colors">
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
             Back to table
           </button>
           <span className="text-xs text-gray-400 font-medium">AI Chat</span>
         </div>
         <div className="flex-1 overflow-hidden">
-          <ChatPanel
-            sessionId={sessionId}
-            currentRows={rows}
-            onTableUpdate={handleTableUpdate}
-          />
+          <ChatPanel sessionId={sessionId} currentRows={[]} onTableUpdate={() => {}} />
         </div>
       </div>
 
-      {(tab === "contacts" || tab === "main") && (editRecord !== null || editMode === "add") && (
-        <EditModal
-          record={editRecord}
-          mode={editMode}
-          onClose={handleModalClose}
-          onSave={reloadContacts}
-        />
+      {tab === "main" && (mainEditRecord !== null || mainEditMode === "add") && (
+        <MainEditModal record={mainEditRecord} mode={mainEditMode} onClose={() => { setMainEditRecord(null); setMainEditMode("edit"); }} onSave={reloadMain} />
       )}
-
+      {tab === "contacts" && (editRecord !== null || editMode === "add") && (
+        <EditModal record={editRecord} mode={editMode} onClose={() => { setEditRecord(null); setEditMode("edit"); }} onSave={reloadContacts} />
+      )}
       {tab === "mailers" && (mailerRecord !== null || mailerMode === "add") && (
-        <MailerEditModal
-          record={mailerRecord}
-          mode={mailerMode}
-          onClose={handleMailerModalClose}
-          onSave={reloadMailers}
-        />
+        <MailerEditModal record={mailerRecord} mode={mailerMode} onClose={() => { setMailerRecord(null); setMailerMode("edit"); }} onSave={reloadMailers} />
       )}
 
-      {showUpload ? (
-        <CSVUploadModal
-          onClose={() => setShowUpload(false)}
-          onUpload={() => {
-            setShowUpload(false);
-            reloadContacts();
-          }}
-        />
-      ) : null}
-
-      {showBulkDelete ? (
+      {showUpload && (
+        <CSVUploadModal onClose={() => setShowUpload(false)} onUpload={() => { setShowUpload(false); reloadMain(); reloadContacts(); }} />
+      )}
+      {showBulkDelete && (
         <BulkDeleteModal
-          entityName={tab === "mailers" ? "Mailers" : "Contacts"}
+          entityName={tab === "mailers" ? "Mailers" : tab === "main" ? "Main Database" : "Contacts"}
           pkFieldName={tab === "mailers" ? "mailer_id" : "email"}
           pkLabel={tab === "mailers" ? "Mailer ID" : "Email"}
           pkAliases={tab === "mailers" ? ["mailer"] : []}
           onClose={() => setShowBulkDelete(false)}
-          onDelete={tab === "mailers" ? handleBulkDeleteMailers : handleBulkDeleteContacts}
+          onDelete={tab === "mailers" ? handleBulkDeleteMailers : tab === "main" ? handleBulkDeleteMain : handleBulkDeleteContacts}
         />
-      ) : null}
+      )}
     </div>
   );
 }
 
-function TabButton({
-  label, count, active, onClick,
-}: {
-  label: string;
-  count: number;
-  active: boolean;
-  onClick: () => void;
-}) {
+function TabButton({ label, count, active, onClick }: { label: string; count: number; active: boolean; onClick: () => void }) {
   return (
-    <button
-      onClick={onClick}
-      className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${
-        active
-          ? "border-blue-600 text-blue-600"
-          : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-      }`}
-    >
+    <button onClick={onClick} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${active ? "border-blue-600 text-blue-600" : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"}`}>
       {label}
-      <span
-        className={`text-xs px-2 py-0.5 rounded-full ${
-          active
-            ? "bg-blue-100 text-blue-600"
-            : "bg-gray-100 text-gray-500"
-        }`}
-      >
-        {count}
-      </span>
+      <span className={`text-xs px-2 py-0.5 rounded-full ${active ? "bg-blue-100 text-blue-600" : "bg-gray-100 text-gray-500"}`}>{count}</span>
     </button>
   );
 }
