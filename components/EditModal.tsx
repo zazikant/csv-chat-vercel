@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { ContactRow } from "@/lib/langgraph/state";
 import FieldSuggest from "./FieldSuggest";
+import TagsInput from "./TagsInput";
 
 interface Props {
   record: ContactRow | null;
@@ -21,11 +22,13 @@ export default function EditModal({ record, mode, onClose, onSave }: Props) {
   const [error, setError]   = useState("");
   const [deleting, setDeleting] = useState(false);
   const [mailerOptions, setMailerOptions] = useState<MailerOption[]>([]);
+  const [mailerDropdownOpen, setMailerDropdownOpen] = useState(false);
+  const [mailerHighlight, setMailerHighlight] = useState(0);
 
   useEffect(() => {
     setForm(mode === "edit" && record
-      ? { ...record, opens: record.opens ?? 0, clicks: record.clicks ?? 0 }
-      : { opens: 0, clicks: 0, optin_status: "Subscribed" }
+      ? { ...record, opens: record.opens ?? 0, clicks: record.clicks ?? 0, tags: record.tags ?? [] }
+      : { opens: 0, clicks: 0, optin_status: "Subscribed", tags: [] }
     );
     setError("");
   }, [record, mode]);
@@ -52,17 +55,38 @@ export default function EditModal({ record, mode, onClose, onSave }: Props) {
     setForm((prev) => ({ ...prev, [key]: value }));
   }
 
-  // When user picks a different mailer, reset opens/clicks to defaults
-  // (per the design: opens/clicks are per (contact, mailer))
   function handleMailerChange(mailerId: string) {
     const trimmed = mailerId.trim();
     const isSameAsForm = (form.mailer_id ?? "") === trimmed;
     setForm((prev) => ({
       ...prev,
       mailer_id: trimmed || null,
-      // Only reset counters if the mailer actually changed
       ...(isSameAsForm ? {} : { opens: 0, clicks: 0 }),
     }));
+  }
+
+  // Combobox-style mailer picker: filter options by what's typed
+  const mailerInputValue = (form.mailer_id as string) || "";
+  const loweredMailer = mailerInputValue.trim().toLowerCase();
+  const filteredMailers = loweredMailer
+    ? mailerOptions.filter((m) =>
+        m.mailer_id.toLowerCase().includes(loweredMailer) ||
+        m.subject_line.toLowerCase().includes(loweredMailer)
+      )
+    : mailerOptions;
+
+  function handleMailerKeyDown(e: React.KeyboardEvent) {
+    if (!mailerDropdownOpen || filteredMailers.length === 0) return;
+    if (e.key === "ArrowDown") { e.preventDefault(); setMailerHighlight((h) => Math.min(h + 1, filteredMailers.length - 1)); }
+    if (e.key === "ArrowUp")   { e.preventDefault(); setMailerHighlight((h) => Math.max(h - 1, 0)); }
+    if (e.key === "Enter")     {
+      e.preventDefault();
+      if (mailerHighlight < filteredMailers.length) {
+        handleMailerChange(filteredMailers[mailerHighlight].mailer_id);
+        setMailerDropdownOpen(false);
+      }
+    }
+    if (e.key === "Escape") { e.preventDefault(); setMailerDropdownOpen(false); }
   }
 
   async function handleSave() {
@@ -75,7 +99,6 @@ export default function EditModal({ record, mode, onClose, onSave }: Props) {
     try {
       const url = "/api/contacts";
       const method = mode === "edit" ? "PUT" : "POST";
-      // Strip auto-maintained fields before sending
       const payload: Record<string, unknown> = { ...form };
       for (const f of [
         "last_activity_date","engagement_score","created_at","updated_at",
@@ -83,11 +106,11 @@ export default function EditModal({ record, mode, onClose, onSave }: Props) {
         delete payload[f];
       }
       if (mode === "edit") {
-        payload.email = record!.email; // PK is immutable on update
+        payload.email = record!.email;
       }
-      // Normalize empty mailer_id to null
       if (!payload.mailer_id) payload.mailer_id = null;
-      // Server will lazily create the mailer if it doesn't exist (avoids FK error)
+      // Ensure tags is always an array
+      payload.tags = Array.isArray(payload.tags) ? payload.tags : [];
       const res = await fetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
@@ -223,7 +246,6 @@ export default function EditModal({ record, mode, onClose, onSave }: Props) {
 
           {section("Contact", <>
             {field("phone", "Phone", "text", false, "e.g. +91 9876543210")}
-            {/* Opt-in status as dropdown */}
             <div>
               <label className="block text-xs font-medium text-gray-500 mb-1.5">Opt-in Status</label>
               <select
@@ -237,34 +259,81 @@ export default function EditModal({ record, mode, onClose, onSave }: Props) {
               </select>
               <p className="text-xs text-gray-400 mt-1">
                 Use <strong>Unsubscribed</strong> if the contact opted out.
-                The Mailers tab will count them in unsubscribed_count.
+                Use <strong>Hard Bounced</strong> if their email bounced.
+                The Mailers tab derives unsubscribed_count and hardbounced_count from these values.
+              </p>
+            </div>
+          </>)}
+
+          {section("Tags", <>
+            <div className="col-span-2">
+              <label className="block text-xs font-medium text-gray-500 mb-1.5">Tags</label>
+              <TagsInput
+                value={Array.isArray(form.tags) ? form.tags : []}
+                onChange={(tags) => setVal("tags", tags as never)}
+                placeholder="e.g. vip, mumbai, contractor (press Enter to add)"
+                className="w-full"
+              />
+              <p className="text-xs text-gray-400 mt-1">
+                Categorize this contact with free-form tags. Click the 💡 bulb icon to see suggestions from tags you've already used elsewhere.
               </p>
             </div>
           </>)}
 
           {section("Mailer Engagement (manual)", <>
-            {/* Mailer ID autocomplete */}
-            <div>
+            {/* Mailer ID — combobox (dropdown + free typing) */}
+            <div className="col-span-2">
               <label className="block text-xs font-medium text-gray-500 mb-1.5">Mailer ID</label>
-              <input
-                type="text"
-                list="mailer-options"
-                value={(form.mailer_id as string) || ""}
-                onChange={(e) => handleMailerChange(e.target.value)}
-                placeholder="e.g. M001 (type or pick)"
-                className="w-full px-3 py-2 text-sm text-gray-900 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300 placeholder-gray-500 font-mono"
-              />
-              <datalist id="mailer-options">
-                {mailerOptions.map((m) => (
-                  <option key={m.mailer_id} value={m.mailer_id}>
-                    {m.subject_line}
-                  </option>
-                ))}
-              </datalist>
+              <div className="relative">
+                <div className="flex items-center gap-1">
+                  <input
+                    type="text"
+                    value={mailerInputValue}
+                    onChange={(e) => { handleMailerChange(e.target.value); setMailerDropdownOpen(true); setMailerHighlight(0); }}
+                    onKeyDown={handleMailerKeyDown}
+                    onFocus={() => setMailerDropdownOpen(true)}
+                    onBlur={() => setTimeout(() => setMailerDropdownOpen(false), 150)}
+                    placeholder="e.g. M001 (type or pick from dropdown)"
+                    className="flex-1 px-3 py-2 text-sm text-gray-900 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300 placeholder-gray-500 font-mono"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => { setMailerDropdownOpen((s) => !s); }}
+                    title="Show mailer options"
+                    className="flex-shrink-0 w-7 h-7 flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                  >
+                    <svg className={`w-3.5 h-3.5 transition-transform ${mailerDropdownOpen ? "rotate-180" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                </div>
+                {mailerDropdownOpen && filteredMailers.length > 0 && (
+                  <div className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-xl shadow-xl max-h-52 overflow-y-auto">
+                    {filteredMailers.map((m, i) => (
+                      <div
+                        key={m.mailer_id}
+                        onMouseDown={(e) => { e.preventDefault(); handleMailerChange(m.mailer_id); setMailerDropdownOpen(false); }}
+                        onMouseEnter={() => setMailerHighlight(i)}
+                        className={`px-4 py-2.5 text-sm cursor-pointer flex items-center gap-3 ${
+                          i === mailerHighlight ? "bg-blue-50 text-blue-700" : "text-gray-700 hover:bg-gray-50"
+                        } ${i === 0 ? "rounded-t-xl" : ""} ${i === filteredMailers.length - 1 ? "rounded-b-xl" : ""}`}
+                      >
+                        <span className="font-mono text-xs bg-gray-100 px-1.5 py-0.5 rounded">{m.mailer_id}</span>
+                        <span className="truncate">{m.subject_line}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {mailerDropdownOpen && filteredMailers.length === 0 && mailerInputValue && (
+                  <div className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-xl shadow-xl px-4 py-3 text-sm text-gray-500">
+                    No mailers match <strong>&quot;{mailerInputValue}&quot;</strong>. Press Save to auto-create a stub mailer with this ID.
+                  </div>
+                )}
+              </div>
               <p className="text-xs text-gray-400 mt-1">
                 {mailerOptions.length > 0
-                  ? `${mailerOptions.length} mailer${mailerOptions.length > 1 ? "s" : ""} available — typing a new ID will auto-create a stub mailer`
-                  : "No mailers yet — typing a new ID will auto-create a stub mailer. You can fill in details later in the Mailers tab"}
+                  ? `${mailerOptions.length} mailer${mailerOptions.length > 1 ? "s" : ""} available. Click ▾ to pick, or type a new ID to auto-create.`
+                  : "No mailers yet. Typing a new ID will auto-create a stub mailer. You can fill in details later in the Mailers tab."}
               </p>
             </div>
 
@@ -278,9 +347,6 @@ export default function EditModal({ record, mode, onClose, onSave }: Props) {
               <div className="grid grid-cols-2 gap-2 mt-2">
                 <div><span className="text-gray-500">Engagement:</span> {record?.engagement_score ?? "COLD"}</div>
                 <div><span className="text-gray-500">Last activity:</span> {record?.last_activity_date ? new Date(record.last_activity_date).toLocaleString() : "—"}</div>
-              </div>
-              <div className="mt-2 text-gray-500">
-                These update automatically when you save Opens / Clicks above. The assigned Mailer's counters in the Mailers tab also update automatically.
               </div>
             </div>
           )}

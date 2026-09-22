@@ -26,6 +26,7 @@ export interface ContactRow {
   mailer_id: string | null;         // FK to mailers.mailer_id (nullable)
   opens: number;                    // manually entered per (contact, mailer)
   clicks: number;                   // manually entered per (contact, mailer)
+  tags: string[];                  // free-form categorization tags
   last_activity_date: string | null;
   engagement_score: string | null;  // HOT / WARM / COLD (auto)
 }
@@ -39,21 +40,23 @@ export interface ContactRow {
 // `unsubscribed_count` is computed from contacts where optin_status = 'Unsubscribed'
 // AND mailer_id = this mailer.
 export interface MailerRow {
-  mailer_id: string;            // e.g. M001
+  mailer_id: string;
   subject_line: string;
   template_name: string | null;
   sent_date: string | null;
   // auto-maintained:
-  total_sent: number;           // count of contacts with this mailer_id
-  unique_opens: number;        // count of contacts with this mailer_id AND opens>0
-  total_opens: number;         // sum of opens
-  unique_clicks: number;       // count of contacts with this mailer_id AND clicks>0
-  total_clicks: number;        // sum of clicks
-  unsubscribed_count: number;  // count of contacts with this mailer_id AND optin_status='Unsubscribed'
+  total_sent: number;
+  unique_opens: number;
+  total_opens: number;
+  unique_clicks: number;
+  total_clicks: number;
+  unsubscribed_count: number;  // optin_status='Unsubscribed'
+  hardbounced_count: number;   // optin_status='Hard Bounced' (NEW v2.2)
   // generated:
-  open_rate: number | null;         // unique_opens  / total_sent * 100
-  click_rate: number | null;        // unique_clicks / total_sent * 100
-  unsubscribe_rate: number | null;  // unsubscribed_count / total_sent * 100
+  open_rate: number | null;
+  click_rate: number | null;
+  unsubscribe_rate: number | null;
+  hardbounce_rate: number | null;   // NEW v2.2
 }
 
 // ---- LLM provider (NVIDIA only — see lib/nvidia.ts) -------------------

@@ -15,6 +15,7 @@ const ALL_COLUMNS: { key: keyof ContactRow; label: string }[] = [
   { key: "phone",             label: "Phone" },
   { key: "city",              label: "City" },
   { key: "sector",            label: "Sector" },
+  { key: "tags",              label: "Tags" },
   { key: "mailer_id",         label: "Mailer" },
   { key: "opens",             label: "Opens" },
   { key: "clicks",            label: "Clicks" },
@@ -25,7 +26,7 @@ const ALL_COLUMNS: { key: keyof ContactRow; label: string }[] = [
 
 const VISIBLE_COLUMNS: (keyof ContactRow)[] = [
   "name", "company", "designation", "email", "phone",
-  "mailer_id", "opens", "clicks",
+  "tags", "mailer_id", "opens", "clicks",
   "optin_status", "last_activity_date", "engagement_score",
 ];
 
@@ -33,7 +34,7 @@ const PAGE_SIZE = 25;
 
 const SEARCHABLE_COLUMNS: (keyof ContactRow)[] = [
   "name", "company", "designation", "email", "phone",
-  "city", "sector", "optin_status", "engagement_score", "mailer_id",
+  "city", "sector", "optin_status", "engagement_score", "mailer_id", "tags",
 ];
 
 interface Props {
@@ -59,6 +60,12 @@ export default function ContactsTable({
         SEARCHABLE_COLUMNS.some((col) => {
           const val = row[col];
           if (val === null || val === undefined) return false;
+          // tags is an array - search across all tags
+          if (col === "tags") {
+            const tags = val as unknown as string[];
+            if (!Array.isArray(tags)) return false;
+            return tags.some((t) => typeof t === "string" && t.toLowerCase().includes(searchTerm.toLowerCase()));
+          }
           return String(val).toLowerCase().includes(searchTerm.toLowerCase());
         })
       )
@@ -118,6 +125,11 @@ export default function ContactsTable({
       ALL_COLUMNS.map((c) => {
         const val = row[c.key];
         if (val === null || val === undefined) return "";
+        if (c.key === "tags") {
+          const tags = val as unknown as string[];
+          if (!Array.isArray(tags) || tags.length === 0) return "";
+          return `"${tags.join(", ")}"`;  // wrap in quotes since it contains commas
+        }
         if (typeof val === "string" && val.includes(",")) return `"${val}"`;
         return String(val);
       })
@@ -132,9 +144,21 @@ export default function ContactsTable({
     URL.revokeObjectURL(url);
   }
 
-  function formatValue(row: ContactRow, key: keyof ContactRow): string {
+  function formatValue(row: ContactRow, key: keyof ContactRow): React.ReactNode {
     const val = row[key];
     if (val === null || val === undefined) return "—";
+    if (key === "tags") {
+      const tags = val as unknown as string[];
+      if (!Array.isArray(tags) || tags.length === 0) return <span className="text-gray-300">—</span>;
+      return (
+        <div className="flex gap-1 flex-wrap">
+          {tags.slice(0, 3).map((t) => (
+            <span key={t} className="text-[10px] bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded">{t}</span>
+          ))}
+          {tags.length > 3 && <span className="text-[10px] text-gray-400">+{tags.length - 3}</span>}
+        </div>
+      );
+    }
     if (key === "last_activity_date") {
       try {
         const d = new Date(String(val));
@@ -153,6 +177,7 @@ export default function ContactsTable({
   function getCellClass(key: keyof ContactRow, val: unknown): string {
     if (val === null || val === undefined) return "text-gray-300";
     if (key === "email") return "text-blue-600";
+    if (key === "tags") return "";  // rendered as chips
     if (key === "engagement_score") {
       const s = String(val);
       if (s === "HOT")  return "text-red-600    font-medium";

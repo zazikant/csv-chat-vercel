@@ -6,7 +6,7 @@ import { ContactRow } from "@/lib/langgraph/state";
 const TEMPLATE_HEADERS: (keyof ContactRow)[] = [
   "email", "name", "company", "designation", "phone",
   "city", "sector", "optin_status", "mailer_id",
-  "opens", "clicks",
+  "opens", "clicks", "tags",
 ];
 
 const FIELD_LABELS: Record<string, string> = {
@@ -21,6 +21,7 @@ const FIELD_LABELS: Record<string, string> = {
   mailer_id: "Mailer ID",
   opens: "Opens",
   clicks: "Clicks",
+  tags: "Tags (comma-separated)",
 };
 
 interface ParsedRow {
@@ -54,7 +55,7 @@ export default function CSVUploadModal({ onClose, onUpload }: Props) {
       "rajesh@contractor.com", "Rajesh Kumar", "ABC Contractors",
       "Project Manager", "+91 9876543210", "Mumbai",
       "Infrastructure", "Subscribed", "M001",
-      "3", "1",
+      "3", "1", "vip, mumbai, contractor",
     ];
     const csv = [headers, example.map((v) => v.includes(",") ? `"${v}"` : v)]
       .map((r) => r.join(","))
@@ -96,6 +97,12 @@ export default function CSVUploadModal({ onClose, onUpload }: Props) {
     str(row.mailer_id, "mailer_id");
     num(row.opens, "opens");
     num(row.clicks, "clicks");
+    // tags: parse comma/slash/semicolon separated string into text array
+    const tagsCell = (row.tags as string) || "";
+    if (tagsCell.trim()) {
+      const tagsArr = tagsCell.split(/[,;]/).map((t) => t.trim()).filter((t) => t);
+      (data as Record<string, unknown>).tags = tagsArr;
+    }
 
     if (!data.email) errors.push("email is required (primary key)");
 
@@ -130,6 +137,8 @@ export default function CSVUploadModal({ onClose, onUpload }: Props) {
       open_count: "opens",
       clicks: "clicks",
       click_count: "clicks",
+      tags: "tags",
+      tag: "tags",
     };
 
     const result: ParsedRow[] = [];
@@ -223,6 +232,12 @@ export default function CSVUploadModal({ onClose, onUpload }: Props) {
       if (!res.ok) {
         throw new Error(responseData.error || "Upload failed");
       }
+      // Show dedup summary in a friendly toast (or just close if 0 skipped)
+      const skipped = responseData.skipped ?? 0;
+      const inserted = responseData.inserted ?? 0;
+      if (skipped > 0) {
+        alert(`Upload complete: ${inserted} contact${inserted !== 1 ? "s" : ""} added/updated, ${skipped} skipped (exact duplicate match).`);
+      }
       onUpload();
       onClose();
     } catch (err) {
@@ -311,8 +326,10 @@ export default function CSVUploadModal({ onClose, onUpload }: Props) {
               <p className="text-xs text-gray-400">
                 Template fields: <strong>Email</strong> (required), Name, Company, Designation,
                 Phone, City, Sector, Opt-in Status (Subscribed / Hard Bounced / Unsubscribed),
-                Mailer ID, Opens (int), Clicks (int).
-                Engagement (last_activity_date, engagement_score) and Mailer counters are auto-maintained.
+                Mailer ID, Opens (int), Clicks (int), Tags (comma-separated e.g. &quot;vip, mumbai, contractor&quot;).
+                <br />Dedup rule: a row is skipped if an existing contact already matches ALL of
+                Name + Company + Designation + Email + Phone + Mailer ID.
+                Engagement and Mailer counters are auto-maintained.
               </p>
             </div>
           </div>

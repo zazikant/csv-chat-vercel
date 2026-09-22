@@ -74,8 +74,9 @@ export default function MailerEditModal({ record, mode, onClose, onSave }: Props
       // Strip auto-maintained / generated fields
       for (const f of [
         "total_sent","unique_opens","total_opens","unique_clicks",
-        "total_clicks","unsubscribed_count","open_rate","click_rate",
-        "unsubscribe_rate","created_at","updated_at",
+        "total_clicks","unsubscribed_count","hardbounced_count",
+        "open_rate","click_rate","unsubscribe_rate","hardbounce_rate",
+        "created_at","updated_at",
       ]) {
         delete payload[f];
       }
@@ -193,11 +194,13 @@ export default function MailerEditModal({ record, mode, onClose, onSave }: Props
                 <div><span className="text-gray-500">Unique Clicks:</span> <strong>{record?.unique_clicks ?? 0}</strong></div>
                 <div><span className="text-gray-500">Total Clicks:</span> <strong>{record?.total_clicks ?? 0}</strong></div>
                 <div><span className="text-gray-500">Unsubscribed:</span> <strong>{record?.unsubscribed_count ?? 0}</strong></div>
+                <div><span className="text-gray-500">Hard Bounced:</span> <strong>{record?.hardbounced_count ?? 0}</strong></div>
               </div>
-              <div className="grid grid-cols-3 gap-2 mt-2 pt-2 border-t border-blue-100">
+              <div className="grid grid-cols-4 gap-2 mt-2 pt-2 border-t border-blue-100">
                 <div><span className="text-gray-500">Open Rate:</span> <strong>{record?.open_rate != null ? `${Number(record.open_rate).toFixed(2)}%` : "—"}</strong></div>
                 <div><span className="text-gray-500">Click Rate:</span> <strong>{record?.click_rate != null ? `${Number(record.click_rate).toFixed(2)}%` : "—"}</strong></div>
                 <div><span className="text-gray-500">Unsub Rate:</span> <strong>{record?.unsubscribe_rate != null ? `${Number(record.unsubscribe_rate).toFixed(2)}%` : "—"}</strong></div>
+                <div><span className="text-gray-500">Bounce Rate:</span> <strong>{record?.hardbounce_rate != null ? `${Number(record.hardbounce_rate).toFixed(2)}%` : "—"}</strong></div>
               </div>
               <div className="mt-2 text-gray-500">
                 These numbers update automatically whenever you add, edit, or delete a contact in the Contacts tab.

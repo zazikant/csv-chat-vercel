@@ -14,15 +14,18 @@ const ALL_COLUMNS: { key: keyof MailerRow; label: string }[] = [
   { key: "unique_clicks",     label: "Unique Clicks" },
   { key: "total_clicks",      label: "Total Clicks" },
   { key: "unsubscribed_count",label: "Unsubscribed" },
+  { key: "hardbounced_count",label: "Hard Bounced" },
   { key: "open_rate",         label: "Open Rate" },
   { key: "click_rate",        label: "Click Rate" },
   { key: "unsubscribe_rate",  label: "Unsub Rate" },
+  { key: "hardbounce_rate",   label: "Bounce Rate" },
 ];
 
 const VISIBLE_COLUMNS: (keyof MailerRow)[] = [
   "mailer_id", "subject_line", "sent_date",
-  "total_sent", "unique_opens", "unique_clicks", "unsubscribed_count",
-  "open_rate", "click_rate", "unsubscribe_rate",
+  "total_sent", "unique_opens", "unique_clicks",
+  "unsubscribed_count", "hardbounced_count",
+  "open_rate", "click_rate", "unsubscribe_rate", "hardbounce_rate",
 ];
 
 const PAGE_SIZE = 25;
@@ -172,7 +175,7 @@ export default function MailersTable({
         return "text-gray-400";
       }
     }
-    if (key === "unsubscribe_rate") {
+    if (key === "unsubscribe_rate" || key === "hardbounce_rate") {
       const n = Number(val);
       if (!isNaN(n)) {
         if (n >= 5)  return "text-red-600 font-medium";
@@ -180,7 +183,7 @@ export default function MailersTable({
         return "text-gray-400";
       }
     }
-    if (key === "unsubscribed_count") {
+    if (key === "unsubscribed_count" || key === "hardbounced_count") {
       const n = Number(val);
       return n > 0 ? "text-red-500 font-medium" : "text-gray-400";
     }

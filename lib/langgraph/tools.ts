@@ -18,6 +18,7 @@ Columns:
   - mailer_id          (text, FK to mailers)       -- Which mailer this contact received. NULL = not yet assigned.
   - opens              (integer)                   -- How many times this contact opened the assigned mailer (manual).
   - clicks             (integer)                   -- How many times this contact clicked links in the assigned mailer (manual).
+  - tags               (text[])                    -- Free-form tags for categorizing the contact. e.g. {vip, mumbai, contractor}
   - last_activity_date (timestamptz, auto)        -- Set when opens>0 or clicks>0 (auto).
   - engagement_score   (text, auto)               -- HOT (clicks>0) / WARM (opens>0) / COLD (auto).
 
@@ -33,9 +34,11 @@ Columns:
   - unique_clicks      (integer, auto)              -- count of contacts with this mailer_id AND clicks>0 (auto)
   - total_clicks       (integer, auto)              -- sum of clicks across contacts with this mailer_id (auto)
   - unsubscribed_count (integer, auto)              -- count of contacts with this mailer_id AND optin_status='Unsubscribed' (auto)
+  - hardbounced_count  (integer, auto)              -- count of contacts with this mailer_id AND optin_status='Hard Bounced' (auto)
   - open_rate          (numeric(5,2), generated)   -- unique_opens  / total_sent * 100 (auto-computed)
   - click_rate         (numeric(5,2), generated)   -- unique_clicks / total_sent * 100 (auto-computed)
   - unsubscribe_rate   (numeric(5,2), generated)   -- unsubscribed_count / total_sent * 100 (auto-computed)
+  - hardbounce_rate    (numeric(5,2), generated)   -- hardbounced_count  / total_sent * 100 (auto-computed)
 
 Relationships:
   contacts.mailer_id -> mailers.mailer_id (FK, ON DELETE SET NULL)
