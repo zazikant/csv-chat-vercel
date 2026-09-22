@@ -1,0 +1,6 @@
+# =============================================================================
+#  Cleanup Edge Function configuration
+#  Deploy: supabase functions deploy cleanup --project-ref gdmztlzpsobyjousvvyp
+# =============================================================================
+
+name = "cleanup"

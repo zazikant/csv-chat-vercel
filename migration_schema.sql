@@ -168,6 +168,14 @@ returns trigger
 language plpgsql
 as $$
 begin
+    -- Only set auto-maintained fields on INSERT/UPDATE.
+    -- For DELETE, do nothing here — the AFTER trigger handles recompute.
+    -- CRITICAL: For DELETE, we must return OLD (not NEW which is NULL).
+    -- Returning NULL from a BEFORE DELETE trigger CANCELS the delete!
+    if tg_op = 'DELETE' then
+        return old;
+    end if;
+
     if tg_op = 'INSERT' or tg_op = 'UPDATE' then
         new.last_activity_date := case
             when new.opens > 0 or new.clicks > 0 then coalesce(new.last_activity_date, now())
@@ -197,6 +205,18 @@ begin
 end;
 $$;
 
+-- NOTE: This trigger only fires on INSERT OR UPDATE (NOT DELETE).
+-- The BEFORE trigger was previously firing on DELETE too, and since the
+-- function returned NEW (which is NULL for DELETE), PostgreSQL silently
+-- cancelled every DELETE. Now DELETE goes straight through without the
+-- BEFORE trigger interfering. The AFTER trigger still fires for recompute.
+drop trigger if exists trg_contacts_rollup on public.contacts;
+create trigger trg_contacts_rollup
+    before insert or update on public.contacts
+    for each row execute function public.contacts_before_trigger();
+
+-- Per-row AFTER INSERT/UPDATE/DELETE trigger: recompute the affected mailer(s).
+-- (Must be AFTER so the new/updated/deleted row is visible to the recompute query.)
 create or replace function public.contacts_after_trigger()
 returns trigger
 language plpgsql
@@ -221,11 +241,6 @@ begin
     return new;
 end;
 $$;
-
-drop trigger if exists trg_contacts_rollup on public.contacts;
-create trigger trg_contacts_rollup
-    before insert or update or delete on public.contacts
-    for each row execute function public.contacts_before_trigger();
 
 drop trigger if exists trg_contacts_after on public.contacts;
 create trigger trg_contacts_after
@@ -312,3 +327,59 @@ comment on function public.get_tag_counts() is 'Returns all distinct tags used a
 --    This keeps Supabase disk usage to the minimum (only contacts + mailers).
 -- ---------------------------------------------------------------------
 drop table if exists public.conversation_history cascade;
+
+
+-- ---------------------------------------------------------------------
+-- 10. Cleanup RPC — called daily by the pg_cron schedule (section 11)
+--     or by the Supabase Edge Function (supabase/functions/cleanup).
+--     Deletes any stale log/temp data and updates table statistics.
+--     NEVER touches live data (contacts, mailers).
+-- ---------------------------------------------------------------------
+create or replace function public.cleanup_old_data()
+returns json
+language plpgsql
+security definer
+as $$
+declare
+    result json;
+    deleted_history bigint := 0;
+begin
+    -- 1. Drop conversation_history if it somehow got recreated
+    drop table if exists public.conversation_history cascade;
+    deleted_history := 1;
+
+    -- 2. Update planner statistics so queries stay fast
+    analyze public.contacts;
+    analyze public.mailers;
+
+    -- 3. Return a summary
+    result := json_build_object(
+        'ok', true,
+        'timestamp', now(),
+        'deleted_conversation_history', deleted_history,
+        'contacts_count', (select count(*) from public.contacts),
+        'mailers_count', (select count(*) from public.mailers)
+    );
+
+    return result;
+end;
+$$;
+
+comment on function public.cleanup_old_data() is 'Daily cleanup: drops any stale log tables, updates table statistics. Called by pg_cron or the Edge Function. Never touches live contacts/mailers data.';
+
+
+-- ---------------------------------------------------------------------
+-- 11. pg_cron — schedule daily cleanup at 3 AM UTC
+--     Requires the pg_cron extension (enable in Supabase Dashboard →
+--     Database → Extensions → enable pg_cron).
+--
+--     After enabling pg_cron, run:
+--       select cron.schedule('daily-cleanup', '0 3 * * *', 'select public.cleanup_old_data()');
+--     To unschedule:
+--       select cron.unschedule('daily-cleanup');
+-- ---------------------------------------------------------------------
+-- Note: pg_cron extension must be enabled first. The SQL below is
+-- commented out so the migration doesn't fail if pg_cron isn't enabled yet.
+-- Uncomment after enabling the extension in the Supabase dashboard.
+
+-- select cron.schedule('daily-cleanup', '0 3 * * *', 'select public.cleanup_old_data()');
