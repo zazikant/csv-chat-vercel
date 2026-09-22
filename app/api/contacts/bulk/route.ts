@@ -210,6 +210,21 @@ export async function POST(req: NextRequest) {
     });
   }
 
+  // Pre-fill blank name/company/designation/phone on rows that match an
+  // existing email. This is helpful when uploading CSVs with sparse data:
+  // the user only needs to type the email + the new fields (opens/clicks/
+  // mailer_id), and name/company/designation/phone get filled from the
+  // latest existing record for that email.
+  for (const row of cleanedRows) {
+    const matches = existingByEmail.get(normalizeStr(row.email)) ?? [];
+    if (matches.length === 0) continue;  // new email, nothing to fill from
+    const existing = matches[0];  // use the first (typically only) match
+    if (!row.name        && existing.name)        row.name        = existing.name;
+    if (!row.company     && existing.company)     row.company     = existing.company;
+    if (!row.designation && existing.designation) row.designation = existing.designation;
+    if (!row.phone       && existing.phone)       row.phone       = existing.phone;
+  }
+
   // Step 4: Apply dedup — split rows into "insert" (new email), "update"
   // (existing email with different fields), and "skip" (exact duplicate).
   // Both insert and update rows go into the upsert payload (Supabase's

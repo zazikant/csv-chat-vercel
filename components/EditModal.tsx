@@ -51,6 +51,42 @@ export default function EditModal({ record, mode, onClose, onSave }: Props) {
       .catch(() => setMailerOptions([]));
   }, []);
 
+  // Autofill name/company/designation/phone from the latest existing record
+  // for this email. Only fires on Add mode (not Edit) and only fills fields
+  // that are currently empty (so user-typed values take precedence).
+  // This is helpful when uploading multiple mailer events for the same contact
+  // — you only type the email, the rest gets filled in.
+  const emailValue = (form.email as string || "").trim().toLowerCase();
+  useEffect(() => {
+    // Only auto-fill in "add" mode (in "edit" mode the form is already pre-filled)
+    if (mode !== "add") return;
+    // Need a non-empty, plausible email (must contain @)
+    if (!emailValue || !emailValue.includes("@")) return;
+    // Don't refetch on every keystroke — only when the email looks complete
+    // (contains both @ and a dot after @)
+    const atIdx = emailValue.indexOf("@");
+    if (atIdx === -1) return;
+    if (!emailValue.slice(atIdx + 1).includes(".")) return;
+
+    let cancelled = false;
+    fetch(`/api/contacts?email=eq.${encodeURIComponent(emailValue)}&select=name,company,designation,phone&limit=1`)
+      .then((r) => r.ok ? r.json() : [])
+      .then((rows) => {
+        if (cancelled || !Array.isArray(rows) || rows.length === 0) return;
+        const existing = rows[0] as { name?: string | null; company?: string | null; designation?: string | null; phone?: string | null };
+        setForm((prev) => ({
+          ...prev,
+          // Only fill fields that are currently empty/null
+          name:         prev.name         || existing.name         || prev.name,
+          company:      prev.company        || existing.company        || prev.company,
+          designation:  prev.designation   || existing.designation   || prev.designation,
+          phone:        prev.phone         || existing.phone         || prev.phone,
+        }));
+      })
+      .catch(() => { /* silent — user is offline or endpoint errored */ });
+    return () => { cancelled = true; };
+  }, [emailValue, mode]);
+
   function setVal<T extends keyof ContactRow>(key: T, value: ContactRow[T]) {
     setForm((prev) => ({ ...prev, [key]: value }));
   }
