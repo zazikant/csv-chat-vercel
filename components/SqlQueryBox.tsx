@@ -66,7 +66,7 @@ export default function SqlQueryBox({ onRun }: Props) {
 
   return (
     <div className="border-b border-gray-200 bg-gradient-to-r from-purple-50 to-blue-50/40">
-      <div className="px-4 py-2 flex items-center justify-between">
+      <div className="px-2 sm:px-4 py-2 flex items-center justify-between">
         <button
           onClick={() => setExpanded((s) => !s)}
           className="flex items-center gap-2 text-xs font-medium text-gray-700 hover:text-gray-900 transition-colors"
@@ -92,8 +92,8 @@ export default function SqlQueryBox({ onRun }: Props) {
         )}
       </div>
       {expanded && (
-        <div className="px-4 pb-3 space-y-2">
-          <div className="flex gap-2">
+        <div className="px-2 sm:px-4 pb-3 space-y-2">
+          <div className="flex flex-col sm:flex-row gap-2">
             <textarea
               value={sql}
               onChange={(e) => setSql(e.target.value)}

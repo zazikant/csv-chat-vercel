@@ -123,7 +123,7 @@ export default function MailerEditModal({ record, mode, onClose, onSave }: Props
   const section = (label: string, children: React.ReactNode) => (
     <div className="space-y-3">
       <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-100 pb-1">{label}</h3>
-      <div className="grid grid-cols-2 gap-x-6 gap-y-3">{children}</div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">{children}</div>
     </div>
   );
 
@@ -153,7 +153,7 @@ export default function MailerEditModal({ record, mode, onClose, onSave }: Props
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl mx-2 sm:mx-auto max-h-[90vh] flex flex-col overflow-hidden">
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 flex-shrink-0">
           <h2 className="text-base font-semibold text-gray-800">
             {mode === "edit" ? "Edit Mailer" : "Add New Mailer"}

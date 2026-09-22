@@ -277,17 +277,19 @@ export default function CSVUploadModal({ onClose, onUpload }: Props) {
       const inserted = responseData.inserted ?? 0;
       const updated = responseData.updated ?? 0;
       const skipped = responseData.skipped ?? 0;
+      const identitySkipped = responseData.identitySkipped ?? 0;
       const intraDupes = responseData.intraCsvDuplicates ?? 0;
       const total = responseData.total ?? 0;
       const parts: string[] = [];
-      if (inserted > 0)    parts.push(`${inserted} new`);
-      if (updated > 0)     parts.push(`${updated} updated`);
-      if (skipped > 0)     parts.push(`${skipped} skipped (exact duplicate)`);
-      if (intraDupes > 0)  parts.push(`${intraDupes} duplicate email${intraDupes > 1 ? "s" : ""} in CSV (later row wins)`);
+      if (inserted > 0)           parts.push(`${inserted} new`);
+      if (updated > 0)            parts.push(`${updated} replaced`);
+      if (skipped > 0)            parts.push(`${skipped} exact duplicate`);
+      if (identitySkipped > 0)    parts.push(`${identitySkipped} identity match (skipped)`);
+      if (intraDupes > 0)         parts.push(`${intraDupes} duplicate email${intraDupes > 1 ? "s" : ""} in CSV (later row wins)`);
       const summary = parts.length > 0
         ? `Upload complete: ${parts.join(", ")} out of ${total} row${total !== 1 ? "s" : ""}.`
         : `Upload complete: ${total} row${total !== 1 ? "s" : ""} processed.`;
-      if (inserted > 0 || updated > 0 || skipped > 0 || intraDupes > 0) {
+      if (inserted > 0 || updated > 0 || skipped > 0 || identitySkipped > 0 || intraDupes > 0) {
         alert(summary);
       }
       onUpload();
@@ -305,7 +307,7 @@ export default function CSVUploadModal({ onClose, onUpload }: Props) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden">
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-5xl mx-2 sm:mx-auto max-h-[90vh] flex flex-col overflow-hidden">
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
           <h2 className="text-base font-semibold text-gray-800">
             {step === "upload" ? "Bulk Upload Contacts — CSV" : `Preview — ${fileName}`}
