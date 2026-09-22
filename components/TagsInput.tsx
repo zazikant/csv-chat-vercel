@@ -29,7 +29,7 @@ export default function TagsInput({ value, onChange, placeholder, className = ""
   const [input, setInput] = useState("");
   const [allTags, setAllTags] = useState<TagCount[]>([]);
   const [showDropdown, setShowDropdown] = useState(false);
-  const [highlight, setHighlight] = useState(0);
+  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -61,7 +61,6 @@ export default function TagsInput({ value, onChange, placeholder, className = ""
     onChange([...value, tag]);
     setInput("");
     setShowDropdown(false);
-    setHighlight(0);
   }
 
   function removeTag(tag: string) {
@@ -72,21 +71,15 @@ export default function TagsInput({ value, onChange, placeholder, className = ""
     if (e.key === "Enter" || e.key === ",") {
       e.preventDefault();
       if (input.trim()) {
-        if (showDropdown && suggestions.length > 0 && highlight < suggestions.length) {
-          addTag(suggestions[highlight].tag);
-        } else {
-          addTag(input);
-        }
+        // Enter always adds whatever the user TYPED (not what's highlighted
+        // in the suggestion dropdown). To pick a suggestion instead, the
+        // user clicks it with the mouse. This makes it predictable: type
+        // a brand-new tag, press Enter, the tag is added.
+        addTag(input);
       }
     } else if (e.key === "Backspace" && !input && value.length > 0) {
       e.preventDefault();
       removeTag(value[value.length - 1]);
-    } else if (e.key === "ArrowDown" && showDropdown && suggestions.length > 0) {
-      e.preventDefault();
-      setHighlight((h) => Math.min(h + 1, suggestions.length - 1));
-    } else if (e.key === "ArrowUp" && showDropdown && suggestions.length > 0) {
-      e.preventDefault();
-      setHighlight((h) => Math.max(h - 1, 0));
     } else if (e.key === "Escape") {
       e.preventDefault();
       setShowDropdown(false);
@@ -129,7 +122,7 @@ export default function TagsInput({ value, onChange, placeholder, className = ""
           ref={inputRef}
           type="text"
           value={input}
-          onChange={(e) => { setInput(e.target.value); setShowDropdown(true); setHighlight(0); }}
+          onChange={(e) => { setInput(e.target.value); setShowDropdown(true); }}
           onKeyDown={handleKeyDown}
           onFocus={() => setShowDropdown(true)}
           placeholder={value.length === 0 ? (placeholder || "Add tags...") : ""}
@@ -146,6 +139,12 @@ export default function TagsInput({ value, onChange, placeholder, className = ""
           </svg>
         </button>
       </div>
+      {/* Inline hint: tell the user they can type their own tag */}
+      {input.trim() && !suggestions.some((s) => s.tag === input.trim().toLowerCase()) && (
+        <p className="mt-1 text-[11px] text-gray-400">
+          Press <kbd className="px-1 py-0.5 bg-gray-100 rounded text-gray-600">Enter</kbd> to add <strong>&quot;{input.trim()}&quot;</strong> as a new tag
+        </p>
+      )}
       {show && (
         <div
           ref={dropdownRef}
@@ -155,9 +154,10 @@ export default function TagsInput({ value, onChange, placeholder, className = ""
             <div
               key={s.tag}
               onMouseDown={(e) => { e.preventDefault(); addTag(s.tag); }}
-              onMouseEnter={() => setHighlight(i)}
+              onMouseEnter={() => setHoveredIdx(i)}
+              onMouseLeave={() => setHoveredIdx(null)}
               className={`px-4 py-2.5 text-sm cursor-pointer flex items-center justify-between ${
-                i === highlight ? "bg-blue-50 text-blue-700" : "text-gray-700 hover:bg-gray-50"
+                i === hoveredIdx ? "bg-blue-50 text-blue-700" : "text-gray-700 hover:bg-gray-50"
               } ${i === 0 ? "rounded-t-xl" : ""} ${i === suggestions.length - 1 ? "rounded-b-xl" : ""}`}
             >
               <div className="flex items-center gap-2">

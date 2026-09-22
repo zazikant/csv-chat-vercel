@@ -179,11 +179,13 @@ begin
             else 'COLD'
         end;
         new.updated_at := now();
-        -- Normalize tags: trim + lowercase + dedupe
+        -- Normalize tags: trim + lowercase + dedupe + SORT
+        -- Sorting ensures {vip, mumbai} and {mumbai, vip} are stored identically,
+        -- so re-ordering tags in a CSV upload doesn't trigger a spurious "update".
         if new.tags is null then
             new.tags := '{}';
         elsif array_length(new.tags, 1) > 0 then
-            select coalesce(array_agg(distinct lower(trim(t))), '{}')
+            select coalesce(array_agg(distinct lower(trim(t))) order by lower(trim(t)), '{}')
             into new.tags
             from unnest(new.tags) as t
             where trim(t) <> '';

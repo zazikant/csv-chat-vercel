@@ -37,6 +37,7 @@ interface Props {
   rows: MailerRow[];
   page: number;
   onPageChange: (page: number) => void;
+  onReset?: () => void;  // optional - shown when SQL query replaces the visible rows
   onEdit: (row: MailerRow) => void;
   onAdd: () => void;
   onDeleteRows: (ids: string[]) => void;
@@ -59,7 +60,7 @@ const EMPTY_FILTERS: MailerFilters = {
 };
 
 export default function MailersTable({
-  rows, page, onPageChange, onEdit, onAdd, onDeleteRows,
+  rows, page, onPageChange, onReset, onEdit, onAdd, onDeleteRows,
 }: Props) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [searchTerm, setSearchTerm] = useState("");
@@ -275,6 +276,18 @@ export default function MailersTable({
           )}
         </div>
         <div className="flex items-center gap-2">
+          {onReset && (
+            <button
+              onClick={onReset}
+              className="px-3 py-1.5 text-xs text-orange-500 hover:text-orange-700 hover:bg-orange-50 rounded-lg transition-colors flex items-center gap-1.5"
+              title="Reset to full mailers list"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              Show all
+            </button>
+          )}
           {searchTerm && (
             <button onClick={() => setSearchTerm("")} className="px-3 py-1.5 text-xs text-orange-500 hover:text-orange-700 hover:bg-orange-50 rounded-lg transition-colors">
               Clear search

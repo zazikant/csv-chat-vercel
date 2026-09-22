@@ -65,6 +65,32 @@ function normalizeStr(v: unknown): string {
   return String(v).trim().toLowerCase();
 }
 
+/**
+ * Normalize tags for comparison: lowercase, trim, dedupe, SORT.
+ * Returns a canonical string representation so two arrays with the same
+ * tags in different orders (and different cases) compare equal.
+ *
+ * Examples:
+ *   ["VIP", "mumbai"]            -> "mumbai|vip"
+ *   ["mumbai", "vip"]            -> "mumbai|vip"   (same — order doesn't matter)
+ *   ["VIP"]                       -> "vip"           (case-insensitive)
+ *   []                            -> ""
+ */
+function normalizeTagsForCompare(tags: unknown): string {
+  if (!Array.isArray(tags)) return "";
+  const cleaned: string[] = [];
+  const seen = new Set<string>();
+  for (const t of tags) {
+    if (typeof t !== "string") continue;
+    const tag = t.trim().toLowerCase();
+    if (!tag || seen.has(tag)) continue;
+    seen.add(tag);
+    cleaned.push(tag);
+  }
+  cleaned.sort();
+  return cleaned.join("|");
+}
+
 export async function POST(req: NextRequest) {
   const body = await req.json();
   const { rows } = body;
@@ -139,7 +165,7 @@ export async function POST(req: NextRequest) {
   const allEmails = Array.from(new Set(cleanedRows.map((r) => r.email)));
   const { data: existingContacts, error: fetchErr } = await supabase
     .from("contacts")
-    .select("email,name,company,designation,phone,mailer_id")
+    .select("email,name,company,designation,phone,mailer_id,tags")
     .in("email", allEmails);
 
   if (fetchErr) {
@@ -147,7 +173,7 @@ export async function POST(req: NextRequest) {
   }
 
   // Build a dedup lookup: email → array of existing contact rows (typically 1)
-  const existingByEmail = new Map<string, Array<{ name: string | null; company: string | null; designation: string | null; phone: string | null; mailer_id: string | null }>>();
+  const existingByEmail = new Map<string, Array<{ name: string | null; company: string | null; designation: string | null; phone: string | null; mailer_id: string | null; tags: string[] | null }>>();
   for (const c of existingContacts ?? []) {
     const email = normalizeStr(c.email);
     if (!existingByEmail.has(email)) existingByEmail.set(email, []);
@@ -157,6 +183,7 @@ export async function POST(req: NextRequest) {
       designation: c.designation,
       phone: c.phone,
       mailer_id: c.mailer_id,
+      tags: c.tags,
     });
   }
 
@@ -177,13 +204,17 @@ export async function POST(req: NextRequest) {
       insertCount++;
       continue;
     }
-    // Email already exists — check if it's an exact match (same 6 fields)
+    // Email already exists — check if it's an exact match (same 6 fields + tags)
+    // Tags are compared using normalizeTagsForCompare() so that case differences
+    // (VIP vs vip) and order differences ([vip, mumbai] vs [mumbai, vip]) don't
+    // count as "different" — they're considered the same tags.
     const isExactMatch = existingMatches.some((e) =>
       normalizeStr(e.name)        === normalizeStr(row.name)        &&
       normalizeStr(e.company)     === normalizeStr(row.company)     &&
       normalizeStr(e.designation)  === normalizeStr(row.designation) &&
       normalizeStr(e.phone)        === normalizeStr(row.phone)        &&
-      normalizeStr(e.mailer_id)   === normalizeStr(row.mailer_id)
+      normalizeStr(e.mailer_id)   === normalizeStr(row.mailer_id)   &&
+      normalizeTagsForCompare(e.tags) === normalizeTagsForCompare(row.tags)
     );
     if (isExactMatch) {
       skipped.push({
@@ -204,6 +235,9 @@ export async function POST(req: NextRequest) {
       if (normalizeStr(ex.designation) !== normalizeStr(row.designation)) diffs.push(`designation ("${ex.designation ?? ""}" → "${row.designation ?? ""}")`);
       if (normalizeStr(ex.phone)      !== normalizeStr(row.phone))       diffs.push(`phone ("${ex.phone ?? ""}" → "${row.phone ?? ""}")`);
       if (normalizeStr(ex.mailer_id)  !== normalizeStr(row.mailer_id))   diffs.push(`mailer_id ("${ex.mailer_id ?? ""}" → "${row.mailer_id ?? ""}")`);
+      if (normalizeTagsForCompare(ex.tags) !== normalizeTagsForCompare(row.tags)) {
+        diffs.push(`tags ([${(ex.tags ?? []).join(", ")}] → [${row.tags.join(", ")}])`);
+      }
       // Stash the diff in the skipped array too (as an "updated" entry) so the UI can show it
       skipped.push({
         email: row.email,

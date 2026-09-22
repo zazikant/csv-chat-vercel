@@ -66,15 +66,19 @@ export default function HomePage() {
     setContactPage(1);
   }
 
-  /** Receive rows from the SQL Query Box (paste-your-own SQL flow). */
+  /** Receive rows from the SQL Query Box (paste-your-own SQL flow).
+   *  The result replaces whatever table is currently active (Contacts or Mailers).
+   *  We mark the view as "filtered" so the user can hit "Show all" to reset.
+   */
   function handleSqlResult(rows: Record<string, unknown>[]) {
-    // The query result replaces whatever is shown in the contacts table.
-    // We mark the view as "filtered" so the user can hit "Show all" to reset.
-    setRows(rows as unknown as ContactRow[]);
-    setFiltered(true);
-    setContactPage(1);
-    // Auto-switch to Contacts tab so the user sees their results
-    setTab("contacts");
+    if (tab === "contacts") {
+      setRows(rows as unknown as ContactRow[]);
+      setFiltered(true);
+      setContactPage(1);
+    } else {
+      setMailers(rows as unknown as MailerRow[]);
+    }
+    setMailerPage(1);
     // Switch to table view on mobile so the user sees the result
     setMobileView("table");
   }
@@ -83,6 +87,12 @@ export default function HomePage() {
     setRows(allRows);
     setFiltered(false);
     setContactPage(1);
+  }
+
+  /** Reset Mailers view back to the full list (after a SQL query replaced it). */
+  function handleResetMailers() {
+    reloadMailers();
+    setMailerPage(1);
   }
 
   function handleEdit(row: ContactRow) {
@@ -177,10 +187,8 @@ export default function HomePage() {
           </button>
         </div>
 
-        {/* SQL Query Box — paste-your-own SQL (only on Contacts tab) */}
-        {tab === "contacts" && (
-          <SqlQueryBox onRun={handleSqlResult} />
-        )}
+        {/* SQL Query Box — paste-your-own SQL (visible on both tabs) */}
+        <SqlQueryBox onRun={handleSqlResult} />
 
         {/* Tab body */}
         <div className="flex-1 overflow-hidden">
@@ -201,6 +209,7 @@ export default function HomePage() {
               rows={mailers}
               page={mailerPage}
               onPageChange={setMailerPage}
+              onReset={handleResetMailers}
               onEdit={handleEditMailer}
               onAdd={handleAddMailer}
               onDeleteRows={handleDeleteMailers}
