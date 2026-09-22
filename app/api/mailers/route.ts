@@ -3,9 +3,9 @@ import { supabase } from "@/lib/supabase";
 
 export async function GET() {
   const { data, error } = await supabase
-    .from("contacts")
+    .from("mailers")
     .select("*")
-    .order("email", { ascending: true });
+    .order("sent_date", { ascending: false, nullsFirst: false });
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -16,13 +16,24 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   const body = await req.json();
 
-  // email is the PK - require it
-  if (!body?.email) {
-    return NextResponse.json({ error: "email is required" }, { status: 400 });
+  if (!body?.mailer_id) {
+    return NextResponse.json({ error: "mailer_id is required" }, { status: 400 });
+  }
+  if (!body?.subject_line) {
+    return NextResponse.json({ error: "subject_line is required" }, { status: 400 });
+  }
+
+  // Strip auto-maintained / generated fields
+  for (const f of [
+    "total_sent","delivered","unique_opens","total_opens","unique_clicks",
+    "total_clicks","bounced","unsubscribed","open_rate","click_rate",
+    "created_at","updated_at",
+  ]) {
+    delete body[f];
   }
 
   const { data, error } = await supabase
-    .from("contacts")
+    .from("mailers")
     .insert(body)
     .select()
     .single();
@@ -35,24 +46,25 @@ export async function POST(req: NextRequest) {
 
 export async function PUT(req: NextRequest) {
   const body = await req.json();
-  const { email, ...fields } = body;
+  const { mailer_id, ...fields } = body;
 
-  if (!email) {
-    return NextResponse.json({ error: "email is required" }, { status: 400 });
+  if (!mailer_id) {
+    return NextResponse.json({ error: "mailer_id is required" }, { status: 400 });
   }
 
-  // Strip auto-managed fields - they are maintained by triggers
+  // Strip auto-maintained / generated fields
   for (const f of [
-    "total_sent","total_opens","total_clicks",
-    "last_activity_date","engagement_score","created_at","updated_at",
+    "total_sent","delivered","unique_opens","total_opens","unique_clicks",
+    "total_clicks","bounced","unsubscribed","open_rate","click_rate",
+    "created_at","updated_at",
   ]) {
     delete fields[f];
   }
 
   const { data, error } = await supabase
-    .from("contacts")
+    .from("mailers")
     .update(fields)
-    .eq("email", email)
+    .eq("mailer_id", mailer_id)
     .select()
     .single();
 
@@ -65,27 +77,27 @@ export async function PUT(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
   const body = await req.json();
 
-  if (Array.isArray(body.emails)) {
+  if (Array.isArray(body.mailer_ids)) {
     const { error } = await supabase
-      .from("contacts")
+      .from("mailers")
       .delete()
-      .in("email", body.emails);
+      .in("mailer_id", body.mailer_ids);
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
-    return NextResponse.json({ success: true, deleted: body.emails.length });
+    return NextResponse.json({ success: true, deleted: body.mailer_ids.length });
   }
 
-  const { email } = body;
-  if (!email) {
-    return NextResponse.json({ error: "email or emails is required" }, { status: 400 });
+  const { mailer_id } = body;
+  if (!mailer_id) {
+    return NextResponse.json({ error: "mailer_id or mailer_ids is required" }, { status: 400 });
   }
 
   const { error } = await supabase
-    .from("contacts")
+    .from("mailers")
     .delete()
-    .eq("email", email);
+    .eq("mailer_id", mailer_id);
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });

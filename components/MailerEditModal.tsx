@@ -1,24 +1,26 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { ContactRow } from "@/lib/langgraph/state";
-import FieldSuggest from "./FieldSuggest";
+import { MailerRow } from "@/lib/langgraph/state";
 
 interface Props {
-  record: ContactRow | null;
+  record: MailerRow | null;
   mode: "add" | "edit";
   onClose: () => void;
   onSave: () => void;
 }
 
-export default function EditModal({ record, mode, onClose, onSave }: Props) {
-  const [form, setForm]   = useState<Partial<ContactRow>>({});
+const CUSTOMER_TYPES = ["Existing", "New"];
+const OPTIN_STATUSES = ["Subscribed", "Unsubscribed", "Bounced", "Unknown"];
+
+export default function MailerEditModal({ record, mode, onClose, onSave }: Props) {
+  const [form, setForm]   = useState<Partial<MailerRow>>({});
   const [saving, setSaving] = useState(false);
   const [error, setError]   = useState("");
   const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
-    setForm(mode === "edit" && record ? { ...record } : {});
+    setForm(mode === "edit" && record ? { ...record } : { mailer_id: "" });
     setError("");
   }, [record, mode]);
 
@@ -30,30 +32,59 @@ export default function EditModal({ record, mode, onClose, onSave }: Props) {
     return () => window.removeEventListener("keydown", handleKey);
   }, [onClose]);
 
-  function setVal(key: keyof ContactRow, value: string | number | null) {
+  function setVal(key: keyof MailerRow, value: string | number | null) {
     setForm((prev) => ({ ...prev, [key]: value ?? null }));
   }
 
+  // Convert ISO datetime to the format expected by <input type="datetime-local">
+  function isoToLocalInput(iso: string | null | undefined): string {
+    if (!iso) return "";
+    try {
+      const d = new Date(iso);
+      if (isNaN(d.getTime())) return "";
+      const pad = (n: number) => String(n).padStart(2, "0");
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    } catch {
+      return "";
+    }
+  }
+
+  function localInputToISO(local: string): string | null {
+    if (!local) return null;
+    try {
+      const d = new Date(local);
+      if (isNaN(d.getTime())) return null;
+      return d.toISOString();
+    } catch {
+      return null;
+    }
+  }
+
   async function handleSave() {
-    if (!form.email) {
-      setError("Email is required (it is the primary key).");
+    if (!form.mailer_id) {
+      setError("Mailer ID is required (e.g. M001).");
+      return;
+    }
+    if (!form.subject_line) {
+      setError("Subject line is required.");
       return;
     }
     setSaving(true);
     setError("");
     try {
-      const url = "/api/contacts";
+      const url = "/api/mailers";
       const method = mode === "edit" ? "PUT" : "POST";
-      // Strip auto-maintained fields before sending
       const payload: Record<string, unknown> = { ...form };
+      // Strip auto-maintained / generated fields
       for (const f of [
-        "total_sent","total_opens","total_clicks","last_activity_date",
-        "engagement_score","created_at","updated_at","legacy_id","legacy_remarks",
+        "total_sent","delivered","unique_opens","total_opens","unique_clicks",
+        "total_clicks","bounced","unsubscribed","open_rate","click_rate",
+        "created_at","updated_at",
       ]) {
         delete payload[f];
       }
       if (mode === "edit") {
-        payload.email = record!.email; // PK is immutable on update
+        payload.mailer_id = record!.mailer_id; // PK immutable on update
       }
       const res = await fetch(url, {
         method,
@@ -74,14 +105,14 @@ export default function EditModal({ record, mode, onClose, onSave }: Props) {
   }
 
   async function handleDelete() {
-    if (!confirm("Delete this contact? This will also delete their email_journey rows. This cannot be undone.")) return;
+    if (!confirm("Delete this mailer? This will also delete its email_journey rows. This cannot be undone.")) return;
     setDeleting(true);
     setError("");
     try {
-      const res = await fetch("/api/contacts", {
+      const res = await fetch("/api/mailers", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: record!.email }),
+        body: JSON.stringify({ mailer_id: record!.mailer_id }),
       });
       if (!res.ok) throw new Error("Delete failed");
       onSave();
@@ -100,51 +131,25 @@ export default function EditModal({ record, mode, onClose, onSave }: Props) {
   );
 
   const field = (
-    key: keyof ContactRow,
+    key: keyof MailerRow,
     label: string,
-    type: "text" | "email" | "number" | "date" | "textarea",
+    type: "text" | "datetime-local",
     colSpan = false,
     placeholder?: string,
     disabled = false,
   ) => (
     <div key={key} className={colSpan ? "col-span-2" : ""}>
       <label className="block text-xs font-medium text-gray-500 mb-1.5">{label}</label>
-      {type === "number" ? (
-        <input
-          type="number"
-          value={(form[key] as number) ?? ""}
-          disabled={disabled}
-          onChange={(e) => setVal(key, e.target.value ? Number(e.target.value) : null)}
-          className="w-full px-3 py-2 text-sm text-gray-900 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300 placeholder-gray-500 disabled:bg-gray-50 disabled:text-gray-400"
-          placeholder={placeholder}
-        />
-      ) : type === "email" ? (
-        <input
-          type="email"
-          value={(form[key] as string) || ""}
-          disabled={disabled}
-          onChange={(e) => setVal(key, e.target.value)}
-          className="w-full px-3 py-2 text-sm text-gray-900 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300 placeholder-gray-500 disabled:bg-gray-50 disabled:text-gray-400"
-          placeholder={placeholder}
-        />
-      ) : type === "textarea" ? (
-        <textarea
-          value={(form[key] as string) || ""}
-          disabled={disabled}
-          onChange={(e) => setVal(key, e.target.value)}
-          rows={3}
-          placeholder={placeholder}
-          className="w-full px-3 py-2 text-sm text-gray-900 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300 resize-none placeholder-gray-500"
-        />
-      ) : (
-        <FieldSuggest
-          column={key}
-          value={(form[key] as string) || ""}
-          onChange={(v) => setVal(key, v)}
-          placeholder={placeholder}
-          className="w-full"
-        />
-      )}
+      <input
+        type={type}
+        value={type === "datetime-local"
+          ? isoToLocalInput(form[key] as string)
+          : (form[key] as string) || ""}
+        disabled={disabled}
+        onChange={(e) => setVal(key, type === "datetime-local" ? localInputToISO(e.target.value) : e.target.value)}
+        className="w-full px-3 py-2 text-sm text-gray-900 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300 placeholder-gray-500 disabled:bg-gray-50 disabled:text-gray-400"
+        placeholder={placeholder}
+      />
     </div>
   );
 
@@ -154,11 +159,11 @@ export default function EditModal({ record, mode, onClose, onSave }: Props) {
       <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 flex-shrink-0">
           <h2 className="text-base font-semibold text-gray-800">
-            {mode === "edit" ? "Edit Contact" : "Add New Contact"}
+            {mode === "edit" ? "Edit Mailer" : "Add New Mailer"}
           </h2>
           <div className="flex items-center gap-3">
-            {record?.email && (
-              <span className="text-xs text-gray-400 font-mono">{record.email}</span>
+            {record?.mailer_id && (
+              <span className="text-xs text-gray-400 font-mono">{record.mailer_id}</span>
             )}
             <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -175,32 +180,32 @@ export default function EditModal({ record, mode, onClose, onSave }: Props) {
             </div>
           )}
 
-          {section("Identity", <>
-            {field("email", "Email *", "email", false, "e.g. rajesh@company.com", mode === "edit")}
-            {field("name", "Name", "text", false, "e.g. Rajesh Kumar")}
-          </>)}
-
-          {section("Organization", <>
-            {field("company", "Company", "text", false, "e.g. Godrej Properties")}
-            {field("designation", "Designation", "text", false, "e.g. Project Manager")}
-            {field("city", "City", "text", false, "e.g. Mumbai")}
-            {field("sector", "Sector", "text", false, "e.g. Real Estate")}
-          </>)}
-
-          {section("Contact", <>
-            {field("phone", "Phone", "text", false, "e.g. +91 9876543210")}
-            {field("customer_type", "Customer Type", "text", false, "Existing / New")}
-            {field("optin_status", "Opt-in Status", "text", false, "Subscribed / Unsubscribed / Bounced")}
+          {section("Mailer Details", <>
+            {field("mailer_id", "Mailer ID *", "text", false, "e.g. M001", mode === "edit")}
+            {field("template_name", "Template Name", "text", false, "e.g. Newsletter-Jan-2026")}
+            {field("subject_line", "Subject Line *", "text", true, "e.g. Q1 Newsletter: What's new this January")}
+            {field("sent_date", "Sent Date", "datetime-local")}
           </>)}
 
           {mode === "edit" && (
             <div className="px-4 py-3 bg-blue-50 border border-blue-100 rounded-lg text-xs text-blue-700">
-              <strong>Engagement metrics</strong> (auto-maintained):
+              <strong>Performance metrics</strong> (auto-maintained by triggers on email_journey inserts):
               <div className="grid grid-cols-4 gap-2 mt-2">
-                <div><span className="text-gray-500">Sent:</span> {record?.total_sent ?? 0}</div>
-                <div><span className="text-gray-500">Opens:</span> {record?.total_opens ?? 0}</div>
-                <div><span className="text-gray-500">Clicks:</span> {record?.total_clicks ?? 0}</div>
-                <div><span className="text-gray-500">Score:</span> {record?.engagement_score ?? "COLD"}</div>
+                <div><span className="text-gray-500">Sent:</span>        {record?.total_sent ?? 0}</div>
+                <div><span className="text-gray-500">Delivered:</span>   {record?.delivered ?? 0}</div>
+                <div><span className="text-gray-500">Unique Opens:</span>{record?.unique_opens ?? 0}</div>
+                <div><span className="text-gray-500">Total Opens:</span> {record?.total_opens ?? 0}</div>
+                <div><span className="text-gray-500">Unique Clicks:</span>{record?.unique_clicks ?? 0}</div>
+                <div><span className="text-gray-500">Total Clicks:</span>{record?.total_clicks ?? 0}</div>
+                <div><span className="text-gray-500">Bounced:</span>     {record?.bounced ?? 0}</div>
+                <div><span className="text-gray-500">Unsubscribed:</span>{record?.unsubscribed ?? 0}</div>
+              </div>
+              <div className="grid grid-cols-2 gap-2 mt-2">
+                <div><span className="text-gray-500">Open Rate:</span>  <strong>{record?.open_rate != null ? `${Number(record.open_rate).toFixed(2)}%` : "—"}</strong></div>
+                <div><span className="text-gray-500">Click Rate:</span> <strong>{record?.click_rate != null ? `${Number(record.click_rate).toFixed(2)}%` : "—"}</strong></div>
+              </div>
+              <div className="mt-2 text-gray-500">
+                To record an event (SENT, OPENED, CLICKED, BOUNCED, UNSUBSCRIBED), insert a row into the <code>email_journey</code> table - counters here will update automatically.
               </div>
             </div>
           )}
@@ -214,7 +219,7 @@ export default function EditModal({ record, mode, onClose, onSave }: Props) {
                 disabled={deleting}
                 className="px-4 py-2 text-sm text-red-600 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
               >
-                {deleting ? "Deleting..." : "Delete Record"}
+                {deleting ? "Deleting..." : "Delete Mailer"}
               </button>
             )}
           </div>
@@ -230,7 +235,7 @@ export default function EditModal({ record, mode, onClose, onSave }: Props) {
               disabled={saving}
               className="px-5 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50"
             >
-              {saving ? "Saving..." : mode === "edit" ? "Save Changes" : "Add Contact"}
+              {saving ? "Saving..." : mode === "edit" ? "Save Changes" : "Add Mailer"}
             </button>
           </div>
         </div>

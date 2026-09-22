@@ -47,8 +47,8 @@ Schema:
 ${state.tableSchema}
 
 Current UI state:
-- ${state.currentRows.length} rows currently visible in the table
-${state.currentRows.length > 0 ? `- Currently showing records with IDs: ${state.currentRows.slice(0, 10).map(r => r.id).join(", ")}${state.currentRows.length > 10 ? "..." : ""}` : "- Table is empty or unfiltered"}
+- ${state.currentRows.length} rows currently visible in the contacts table
+${state.currentRows.length > 0 ? `- Currently showing emails: ${state.currentRows.slice(0, 10).map(r => r.email).join(", ")}${state.currentRows.length > 10 ? "..." : ""}` : "- Table is empty or unfiltered"}
 
 Conversation history:
 ${historyText}
@@ -56,12 +56,13 @@ ${historyText}
 Current user query: "${state.userQuery}"
 
 Classify as exactly ONE of:
-- filter      → user wants rows matching a condition (e.g. status, department, sector, city)
-- count       → user wants a number or count (e.g. "how many won", "total proposals")
-- lookup      → user wants a specific field value for a known project or customer
+- filter      → user wants contacts matching a condition (e.g. optin_status, engagement_score, sector, city)
+- count       → user wants a number or count (e.g. "how many hot", "total contacts")
+- lookup      → user wants a specific field value for a known contact or company
 - aggregate   → user wants group-by / distinct values / statistics / sums
-- sort        → user wants results sorted by a field (value, date, etc.)
-- reset       → user wants to see all proposals again (e.g. "show all", "reset", "clear filter")
+- sort        → user wants results sorted by a field (opens, clicks, date, etc.)
+- mailer      → user wants info about a mailer / campaign / subject line performance
+- reset       → user wants to see all contacts again (e.g. "show all", "reset", "clear filter")
 - unknown     → query cannot be answered from this data
 
 IMPORTANT: If user asks a question about counts or aggregates while data is filtered, they likely want the count from the CURRENTLY VISIBLE data, not the full database. Return "filter" intent in such cases.
@@ -70,7 +71,7 @@ Return ONLY the single classification word, nothing else.`;
 
   const response = await llm.invoke(prompt);
   const raw = response.content.toString().trim().toLowerCase().split(/\s+/)[0];
-  const valid = ["filter", "count", "lookup", "aggregate", "sort", "reset", "unknown"];
+  const valid = ["filter", "count", "lookup", "aggregate", "sort", "mailer", "reset", "unknown"];
   const intent = valid.includes(raw) ? raw : "unknown";
 
   console.log(`🎯 [IntentClassifier] Intent: ${intent}`);
@@ -96,10 +97,12 @@ Rules:
 3. End with semicolon
 
 Examples:
-- How many won? → SELECT * FROM contacts WHERE status ILIKE 'won' ORDER BY id;
-- Show open proposals → SELECT * FROM contacts WHERE status ILIKE 'open' ORDER BY id;
-- Show all → SELECT * FROM contacts ORDER BY id;
-- Sort by value → SELECT * FROM contacts ORDER BY proposal_value_inr DESC;`;
+- Show hot contacts → SELECT * FROM contacts WHERE engagement_score ILIKE 'hot' ORDER BY email;
+- Show subscribed → SELECT * FROM contacts WHERE optin_status ILIKE 'subscribed' ORDER BY email;
+- Show all → SELECT * FROM contacts ORDER BY email;
+- Sort by opens → SELECT * FROM contacts ORDER BY total_opens DESC;
+- Best mailers → SELECT * FROM mailers ORDER BY open_rate DESC;
+- Recent opens → SELECT * FROM email_journey WHERE event_type = 'OPENED' ORDER BY timestamp DESC;`;
 
   const response = await llm.invoke(prompt);
   const sql = response.content
@@ -164,7 +167,7 @@ export async function responseFormatterNode(
 
   if (state.queryIntent === "unknown") {
     const msg =
-      "I can only answer questions about the contacts data — names, emails, companies, phones, cities, and designations. Please rephrase your question.";
+      "I can only answer questions about the email campaign tracker data — contacts, mailers, and email journey events (opens, clicks, bounces). Please rephrase your question.";
     await saveMessage(state.sessionId, "user", state.userQuery);
     await saveMessage(state.sessionId, "assistant", msg);
     return {
@@ -197,6 +200,7 @@ export async function responseFormatterNode(
     state.queryIntent === "lookup" ||
     state.queryIntent === "sort" ||
     state.queryIntent === "reset" ||
+    state.queryIntent === "mailer" ||
     state.queryIntent === "count" ||
     state.queryIntent === "aggregate") &&
     Array.isArray(state.queryResult) &&
@@ -217,8 +221,8 @@ Result summary: ${resultSummary}
 Full result: ${JSON.stringify(state.queryResult?.slice(0, 5), null, 2)}
 
 Current UI state:
-- ${state.currentRows.length} rows currently visible in the table
-${state.currentRows.length > 0 ? `- Currently showing records with IDs: ${state.currentRows.slice(0, 10).map(r => r.id).join(", ")}${state.currentRows.length > 10 ? "..." : ""}` : "- Table is empty or unfiltered"}
+- ${state.currentRows.length} rows currently visible in the contacts table
+${state.currentRows.length > 0 ? `- Currently showing emails: ${state.currentRows.slice(0, 10).map(r => r.email).join(", ")}${state.currentRows.length > 10 ? "..." : ""}` : "- Table is empty or unfiltered"}
 
 Write a short, friendly, conversational response (1–3 sentences).
 - For filters: mention how many results were found and what filter was applied.

@@ -3,38 +3,21 @@
 import { useState, useEffect, useRef } from "react";
 import { ContactRow } from "@/lib/langgraph/state";
 
-const TEMPLATE_HEADERS = [
-  "proposal_number", "project_name", "name", "email", "phone_number",
-  "designation", "company_name", "type_of_customer", "existing_new_customer",
-  "sector", "city", "status", "department", "go_no_go_decision",
-  "inbound_outbound", "proposal_enquiry_for", "quotation_method",
-  "proposal_value_inr", "enquiry_received_date", "proposal_sent_date",
-  "mode_of_submission", "remarks",
+const TEMPLATE_HEADERS: (keyof ContactRow)[] = [
+  "email", "name", "company", "designation", "phone",
+  "city", "sector", "customer_type", "optin_status",
 ];
 
 const FIELD_LABELS: Record<string, string> = {
-  proposal_number: "Proposal Number",
-  project_name: "Project Name",
-  name: "Contact Name",
   email: "Email",
-  phone_number: "Phone",
+  name: "Name",
+  company: "Company",
   designation: "Designation",
-  company_name: "Company Name",
-  type_of_customer: "Type of Customer",
-  existing_new_customer: "Existing/New Customer",
-  sector: "Sector",
+  phone: "Phone",
   city: "City",
-  status: "Status",
-  department: "Department",
-  go_no_go_decision: "Go/No-Go Decision",
-  inbound_outbound: "Inbound/Outbound",
-  proposal_enquiry_for: "Proposal Enquiry For",
-  quotation_method: "Quotation Method",
-  proposal_value_inr: "Proposal Value (INR)",
-  enquiry_received_date: "Enquiry Received Date (YYYY-MM-DD)",
-  proposal_sent_date: "Proposal Sent Date (YYYY-MM-DD)",
-  mode_of_submission: "Mode of Submission",
-  remarks: "Remarks",
+  sector: "Sector",
+  customer_type: "Customer Type",
+  optin_status: "Opt-in Status",
 };
 
 interface ParsedRow {
@@ -64,30 +47,11 @@ export default function CSVUploadModal({ onClose, onUpload }: Props) {
 
   function downloadTemplate() {
     const headers = TEMPLATE_HEADERS.map((k) => FIELD_LABELS[k]);
-    const example: string[] = Array(TEMPLATE_HEADERS.length).fill("");
-    example[0] = "GEM/2024/001";
-    example[1] = "Mumbai Metro Phase 2";
-    example[2] = "Rajesh Kumar";
-    example[3] = "rajesh@contractor.com";
-    example[4] = "+91 9876543210";
-    example[5] = "Project Manager";
-    example[6] = "ABC Contractors";
-    example[7] = "Contractor";
-    example[8] = "New";
-    example[9] = "Infrastructure";
-    example[10] = "Mumbai";
-    example[11] = "Open";
-    example[12] = "PMC";
-    example[13] = "Approved";
-    example[14] = "Inbound";
-    example[15] = "Project Management Consultancy";
-    example[16] = "Man-Months";
-    example[17] = "5000000";
-    example[18] = "2024-01-15";
-    example[19] = "2024-02-01";
-    example[20] = "Email";
-    example[21] = "Follow up next week";
-
+    const example = [
+      "rajesh@contractor.com", "Rajesh Kumar", "ABC Contractors",
+      "Project Manager", "+91 9876543210", "Mumbai",
+      "Infrastructure", "New", "Subscribed",
+    ];
     const csv = [headers, example.map((v) => v.includes(",") ? `"${v}"` : v)]
       .map((r) => r.join(","))
       .join("\n");
@@ -95,7 +59,7 @@ export default function CSVUploadModal({ onClose, onUpload }: Props) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "proposals_template.csv";
+    a.download = "contacts_template.csv";
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -109,56 +73,18 @@ export default function CSVUploadModal({ onClose, onUpload }: Props) {
       if (trimmed) data[key] = trimmed as never;
       return trimmed;
     };
-    const num = (v: string | undefined, key: keyof ContactRow) => {
-      const trimmed = (v || "").trim();
-      if (!trimmed || trimmed === "-") return;
-      const cleaned = trimmed.replace(/[^\d.]/g, "");
-      const n = parseFloat(cleaned);
-      if (!isNaN(n) && cleaned.length > 0) {
-        (data as Record<string, unknown>)[key] = n;
-      }
-    };
-    const date = (v: string | undefined, key: keyof ContactRow) => {
-      const trimmed = (v || "").trim();
-      if (!trimmed) return;
-      const slashParts = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-      if (slashParts) {
-        const [, a, b, y] = slashParts;
-        const [m, d] = parseInt(a) > 12 ? [b, a] : [a, b];
-        data[key] = `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}` as never;
-        return;
-      }
-      const dashParts = trimmed.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
-      if (dashParts) {
-        const [, a, b, y] = dashParts;
-        const [m, d] = parseInt(a) > 12 ? [b, a] : [a, b];
-        data[key] = `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}` as never;
-        return;
-      }
-    };
-    str(row.proposal_number, "proposal_number");
-    str(row.project_name, "project_name");
-    str(row.name, "name");
+
     str(row.email, "email");
-    str(row.phone_number, "phone_number");
+    str(row.name, "name");
+    str(row.company, "company");
     str(row.designation, "designation");
-    str(row.company_name, "company_name");
-    str(row.type_of_customer, "type_of_customer");
-    str(row.existing_new_customer, "existing_new_customer");
-    str(row.sector, "sector");
+    str(row.phone, "phone");
     str(row.city, "city");
-    str(row.status, "status");
-    str(row.department, "department");
-    str(row.go_no_go_decision, "go_no_go_decision");
-    str(row.inbound_outbound, "inbound_outbound");
-    str(row.proposal_enquiry_for, "proposal_enquiry_for");
-    str(row.quotation_method, "quotation_method");
-    num(row.proposal_value_inr, "proposal_value_inr");
-    console.log("validateRow proposal_value_inr:", row.proposal_value_inr, "-> data:", data.proposal_value_inr);
-    date(row.enquiry_received_date, "enquiry_received_date");
-    date(row.proposal_sent_date, "proposal_sent_date");
-    str(row.mode_of_submission, "mode_of_submission");
-    str(row.remarks, "remarks");
+    str(row.sector, "sector");
+    str(row.customer_type, "customer_type");
+    str(row.optin_status, "optin_status");
+
+    if (!data.email) errors.push("email is required (primary key)");
 
     return { rowIndex: index, data, errors };
   }
@@ -168,34 +94,25 @@ export default function CSVUploadModal({ onClose, onUpload }: Props) {
     if (lines.length < 2) return [];
 
     const rawHeaders = lines[0];
-    const headers = rawHeaders.map((h) => h.toLowerCase().trim().replace(/\s*\([^)]*\)/g, "").replace(/\//g, "_").replace(/-/g, "_").replace(/\s+/g, "_"));
+    const headers = rawHeaders.map((h) =>
+      h.toLowerCase().trim().replace(/\s+/g, "_")
+    );
 
     const fieldKeyMap: Record<string, keyof ContactRow> = {
-      proposal_number: "proposal_number",
-      project_name: "project_name",
+      email: "email",
       name: "name",
       contact_name: "name",
-      email: "email",
-      phone: "phone_number",
-      phone_number: "phone_number",
+      company: "company",
+      company_name: "company",
       designation: "designation",
-      company_name: "company_name",
-      type_of_customer: "type_of_customer",
-      existing_new_customer: "existing_new_customer",
-      sector: "sector",
+      phone: "phone",
+      phone_number: "phone",
       city: "city",
-      status: "status",
-      department: "department",
-      go_no_go_decision: "go_no_go_decision",
-      inbound_outbound: "inbound_outbound",
-      proposal_enquiry_for: "proposal_enquiry_for",
-      quotation_method: "quotation_method",
-      proposal_value: "proposal_value_inr",
-      proposal_value_inr: "proposal_value_inr",
-      enquiry_received_date: "enquiry_received_date",
-      proposal_sent_date: "proposal_sent_date",
-      mode_of_submission: "mode_of_submission",
-      remarks: "remarks",
+      sector: "sector",
+      customer_type: "customer_type",
+      type_of_customer: "customer_type",
+      optin_status: "optin_status",
+      opt_in_status: "optin_status",
     };
 
     const result: ParsedRow[] = [];
@@ -210,8 +127,6 @@ export default function CSVUploadModal({ onClose, onUpload }: Props) {
       });
       if (hasData) result.push(validateRow(i, row));
     }
-    console.log("Parsed CSV - headers:", headers);
-    console.log("Parsed CSV - first row mapped:", result[0]?.data);
     return result;
   }
 
@@ -220,11 +135,11 @@ export default function CSVUploadModal({ onClose, onUpload }: Props) {
     let currentRow: string[] = [];
     let currentCell = "";
     let inQuotes = false;
-    
+
     for (let i = 0; i < text.length; i++) {
       const ch = text[i];
       const nextCh = text[i + 1];
-      
+
       if (ch === '"') {
         if (inQuotes && nextCh === '"') {
           currentCell += '"';
@@ -249,12 +164,12 @@ export default function CSVUploadModal({ onClose, onUpload }: Props) {
         currentCell += ch;
       }
     }
-    
+
     if (currentCell.trim() || currentRow.length > 0) {
       currentRow.push(currentCell.trim());
       result.push(currentRow);
     }
-    
+
     return result;
   }
 
@@ -282,21 +197,18 @@ export default function CSVUploadModal({ onClose, onUpload }: Props) {
     setUploadError("");
     try {
       const payload = { rows: validRows.map((r) => r.data) };
-      console.log("Uploading rows:", JSON.stringify(payload, null, 2));
       const res = await fetch("/api/contacts/bulk", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
       const responseData = await res.json();
-      console.log("Upload response:", responseData);
       if (!res.ok) {
         throw new Error(responseData.error || "Upload failed");
       }
       onUpload();
       onClose();
     } catch (err) {
-      console.error("Upload error:", err);
       setUploadError(err instanceof Error ? err.message : "Upload failed");
     } finally {
       setUploading(false);
@@ -312,7 +224,7 @@ export default function CSVUploadModal({ onClose, onUpload }: Props) {
       <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden">
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
           <h2 className="text-base font-semibold text-gray-800">
-            {step === "upload" ? "Bulk Upload — CSV" : `Preview — ${fileName}`}
+            {step === "upload" ? "Bulk Upload Contacts — CSV" : `Preview — ${fileName}`}
           </h2>
           <div className="flex items-center gap-3">
             {step === "preview" && (
@@ -380,8 +292,8 @@ export default function CSVUploadModal({ onClose, onUpload }: Props) {
 
             <div className="px-6 py-4 border-t border-gray-100 bg-gray-50">
               <p className="text-xs text-gray-400">
-                Template includes all 22 fields. Use <strong>field labels from header row</strong> (case-insensitive).
-                Dates must be YYYY-MM-DD. All text fields accept any value.
+                Template fields: <strong>Email</strong> (required), Name, Company, Designation, Phone, City, Sector, Customer Type, Opt-in Status.
+                Engagement metrics (total_sent, total_opens, total_clicks, engagement_score) are auto-maintained by triggers.
               </p>
             </div>
           </div>

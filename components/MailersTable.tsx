@@ -1,59 +1,54 @@
 "use client";
 
 import { useState } from "react";
-import { ContactRow } from "@/lib/langgraph/state";
+import { MailerRow } from "@/lib/langgraph/state";
 
-// Column ordering follows the spec:
-//  Name | Company | Designation | Email | Phone | Last Mailer Subject |
-//  Last Activity | Total Opens | Engagement | Action (View Journey)
-const ALL_COLUMNS: { key: keyof ContactRow; label: string }[] = [
-  { key: "name",              label: "Name" },
-  { key: "company",           label: "Company" },
-  { key: "designation",       label: "Designation" },
-  { key: "email",             label: "Email" },
-  { key: "phone",             label: "Phone" },
-  { key: "city",              label: "City" },
-  { key: "sector",            label: "Sector" },
-  { key: "customer_type",     label: "Customer Type" },
-  { key: "optin_status",      label: "Opt-in" },
-  { key: "last_activity_date",label: "Last Activity" },
-  { key: "total_sent",        label: "Total Sent" },
-  { key: "total_opens",       label: "Total Opens" },
-  { key: "total_clicks",      label: "Total Clicks" },
-  { key: "engagement_score",  label: "Engagement" },
+const ALL_COLUMNS: { key: keyof MailerRow; label: string }[] = [
+  { key: "mailer_id",      label: "Mailer ID" },
+  { key: "subject_line",   label: "Subject Line" },
+  { key: "template_name", label: "Template" },
+  { key: "sent_date",     label: "Sent Date" },
+  { key: "total_sent",    label: "Sent" },
+  { key: "delivered",     label: "Delivered" },
+  { key: "unique_opens",  label: "Unique Opens" },
+  { key: "total_opens",   label: "Total Opens" },
+  { key: "unique_clicks", label: "Unique Clicks" },
+  { key: "total_clicks",  label: "Total Clicks" },
+  { key: "bounced",       label: "Bounced" },
+  { key: "unsubscribed",  label: "Unsubscribed" },
+  { key: "open_rate",     label: "Open Rate" },
+  { key: "click_rate",    label: "Click Rate" },
 ];
 
-const VISIBLE_COLUMNS: (keyof ContactRow)[] = [
-  "name", "company", "designation", "email", "phone",
-  "last_activity_date", "total_opens", "engagement_score",
+const VISIBLE_COLUMNS: (keyof MailerRow)[] = [
+  "mailer_id", "subject_line", "sent_date",
+  "total_sent", "unique_opens", "unique_clicks",
+  "open_rate", "click_rate",
 ];
 
 const PAGE_SIZE = 25;
-
-const SEARCHABLE_COLUMNS: (keyof ContactRow)[] = [
-  "name", "company", "designation", "email", "phone",
-  "city", "sector", "customer_type", "optin_status", "engagement_score",
+const SEARCHABLE_COLUMNS: (keyof MailerRow)[] = [
+  "mailer_id", "subject_line", "template_name",
 ];
 
 interface Props {
-  rows: ContactRow[];
-  isFiltered: boolean;
+  rows: MailerRow[];
   page: number;
   onPageChange: (page: number) => void;
-  onReset: () => void;
-  onEdit: (row: ContactRow) => void;
+  onEdit: (row: MailerRow) => void;
   onAdd: () => void;
-  onUpload: () => void;
-  onDeleteRows: (emails: string[]) => void;
+  onDeleteRows: (ids: string[]) => void;
 }
 
-export default function ContactsTable({
-  rows, isFiltered, page, onPageChange, onReset, onEdit, onAdd, onUpload, onDeleteRows,
+export default function MailersTable({
+  rows, page, onPageChange, onEdit, onAdd, onDeleteRows,
 }: Props) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [searchTerm, setSearchTerm] = useState("");
+  const [sortBy, setSortBy] = useState<keyof MailerRow | null>(null);
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
-  const filteredRows = searchTerm.trim()
+  let filteredRows = searchTerm.trim()
     ? rows.filter((row) =>
         SEARCHABLE_COLUMNS.some((col) => {
           const val = row[col];
@@ -63,52 +58,65 @@ export default function ContactsTable({
       )
     : rows;
 
+  if (sortBy) {
+    filteredRows = [...filteredRows].sort((a, b) => {
+      const av = a[sortBy];
+      const bv = b[sortBy];
+      if (av === null || av === undefined) return 1;
+      if (bv === null || bv === undefined) return -1;
+      if (typeof av === "number" && typeof bv === "number") {
+        return sortDir === "asc" ? av - bv : bv - av;
+      }
+      const ac = String(av);
+      const bc = String(bv);
+      return sortDir === "asc" ? ac.localeCompare(bc) : bc.localeCompare(ac);
+    });
+  }
+
   const totalPages = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
   const paginated  = filteredRows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const visibleCols = ALL_COLUMNS.filter((c) => VISIBLE_COLUMNS.includes(c.key));
 
-  const allOnPage = paginated.map((r) => r.email);
-  const allSelected = allOnPage.length > 0 && allOnPage.every((e) => selected.has(e));
-  const someSelected = allOnPage.some((e) => selected.has(e));
+  const allOnPage = paginated.map((r) => r.mailer_id);
+  const allSelected = allOnPage.length > 0 && allOnPage.every((id) => selected.has(id));
+  const someSelected = allOnPage.some((id) => selected.has(id));
 
   function toggleAll() {
     setSelected((prev) => {
       const next = new Set(prev);
       if (allSelected) {
-        allOnPage.forEach((e) => next.delete(e));
+        allOnPage.forEach((id) => next.delete(id));
       } else {
-        allOnPage.forEach((e) => next.add(e));
+        allOnPage.forEach((id) => next.add(id));
       }
       return next;
     });
   }
 
-  function toggleRow(email: string) {
+  function toggleRow(id: string) {
     setSelected((prev) => {
       const next = new Set(prev);
-      if (next.has(email)) next.delete(email);
-      else next.add(email);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
   }
 
   function handleBulkDelete() {
     if (selected.size === 0) return;
-    if (!confirm(`Delete ${selected.size} selected record${selected.size > 1 ? "s" : ""}? This cannot be undone.`)) return;
+    if (!confirm(`Delete ${selected.size} selected mailer${selected.size > 1 ? "s" : ""}? This will also delete their email_journey rows. This cannot be undone.`)) return;
     onDeleteRows(Array.from(selected));
     setSelected(new Set());
   }
 
-  function handleDeleteVisible() {
-    if (filteredRows.length === 0) return;
-    const isAll = filteredRows.length === rows.length && !searchTerm;
-    const msg = isAll
-      ? `Delete ALL ${filteredRows.length} records? This cannot be undone.`
-      : `Delete ${filteredRows.length} visible record${filteredRows.length > 1 ? "s" : ""}? This cannot be undone.`;
-    if (!confirm(msg)) return;
-    onDeleteRows(filteredRows.map((r) => r.email));
-    setSelected(new Set());
-    setSearchTerm("");
+  function handleSort(key: keyof MailerRow) {
+    if (sortBy === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortBy(key);
+      setSortDir("desc");
+    }
+    onPageChange(1);
   }
 
   function downloadCSV() {
@@ -126,15 +134,15 @@ export default function ContactsTable({
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `contacts_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `mailers_${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   }
 
-  function formatValue(row: ContactRow, key: keyof ContactRow): string {
+  function formatValue(row: MailerRow, key: keyof MailerRow): string {
     const val = row[key];
     if (val === null || val === undefined) return "—";
-    if (key === "last_activity_date") {
+    if (key === "sent_date") {
       try {
         const d = new Date(String(val));
         if (isNaN(d.getTime())) return String(val);
@@ -146,28 +154,31 @@ export default function ContactsTable({
         return String(val);
       }
     }
+    if (key === "open_rate" || key === "click_rate") {
+      const n = Number(val);
+      if (isNaN(n)) return String(val);
+      return `${n.toFixed(2)}%`;
+    }
     return String(val);
   }
 
-  function getCellClass(key: keyof ContactRow, val: unknown): string {
+  function getCellClass(key: keyof MailerRow, val: unknown): string {
     if (val === null || val === undefined) return "text-gray-300";
-    if (key === "email") return "text-blue-600";
-    if (key === "engagement_score") {
-      const s = String(val);
-      if (s === "HOT")  return "text-red-600    font-medium";
-      if (s === "WARM") return "text-orange-500 font-medium";
-      if (s === "COLD") return "text-gray-400";
+    if (key === "open_rate" || key === "click_rate") {
+      const n = Number(val);
+      if (!isNaN(n)) {
+        if (n >= 30) return "text-green-600 font-medium";
+        if (n >= 10) return "text-blue-600";
+        if (n > 0)   return "text-orange-500";
+        return "text-gray-400";
+      }
     }
-    if (key === "optin_status") {
-      const s = String(val);
-      if (s === "Subscribed")   return "text-green-600";
-      if (s === "Unsubscribed") return "text-red-500";
-      if (s === "Bounced")      return "text-orange-600";
-      if (s === "Unknown")      return "text-gray-400";
+    if (key === "subject_line") return "text-gray-800";
+    if (key === "mailer_id")    return "text-gray-500 font-mono";
+    if (key === "bounced" || key === "unsubscribed") {
+      return Number(val) > 0 ? "text-red-500" : "text-gray-400";
     }
-    if (key === "total_opens" || key === "total_clicks" || key === "total_sent") {
-      return "text-right font-mono text-gray-700";
-    }
+    if (typeof val === "number") return "text-right font-mono text-gray-700";
     return "text-gray-700";
   }
 
@@ -175,37 +186,29 @@ export default function ContactsTable({
     <div className="flex flex-col h-full">
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-white">
         <div className="flex items-center gap-2">
-          <h2 className="text-sm font-semibold text-gray-700">Contacts</h2>
+          <h2 className="text-sm font-semibold text-gray-700">Mailers</h2>
           <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">
-            {filteredRows.length} {filteredRows.length === 1 ? "record" : "records"}
+            {filteredRows.length} {filteredRows.length === 1 ? "mailer" : "mailers"}
             {searchTerm && ` (${rows.length} total)`}
           </span>
-          {isFiltered && (
-            <span className="text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full">filtered</span>
-          )}
           {selected.size > 0 && (
             <span className="text-xs bg-orange-100 text-orange-600 px-2 py-0.5 rounded-full">
               {selected.size} selected
             </span>
           )}
-        </div>
-        <div className="flex items-center gap-2">
-          {isFiltered && (
-            <button onClick={onReset} className="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
-              Show all
+          {sortBy && (
+            <button
+              onClick={() => { setSortBy(null); onPageChange(1); }}
+              className="text-xs bg-purple-100 text-purple-600 px-2 py-0.5 rounded-full hover:bg-purple-200 transition-colors"
+            >
+              sorted by {String(sortBy)} {sortDir === "asc" ? "↑" : "↓"} ×
             </button>
           )}
+        </div>
+        <div className="flex items-center gap-2">
           {searchTerm && (
             <button onClick={() => setSearchTerm("")} className="px-3 py-1.5 text-xs text-orange-500 hover:text-orange-700 hover:bg-orange-50 rounded-lg transition-colors">
               Clear search
-            </button>
-          )}
-          {(searchTerm || isFiltered) && filteredRows.length > 0 && (
-            <button onClick={handleDeleteVisible} className="px-3 py-1.5 text-xs bg-red-100 hover:bg-red-200 text-red-600 rounded-lg transition-colors flex items-center gap-1.5">
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-              </svg>
-              Delete visible ({filteredRows.length})
             </button>
           )}
           <div className="relative">
@@ -213,8 +216,8 @@ export default function ContactsTable({
               type="text"
               value={searchTerm}
               onChange={(e) => { setSearchTerm(e.target.value); onPageChange(1); }}
-              placeholder="Search all fields..."
-              className="w-48 pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-100 focus:border-blue-300 placeholder-gray-400"
+              placeholder="Search subject / ID..."
+              className="w-56 pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-100 focus:border-blue-300 placeholder-gray-400"
             />
             <svg className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -226,17 +229,11 @@ export default function ContactsTable({
             </svg>
             CSV
           </button>
-          <button onClick={onUpload} className="px-3 py-1.5 text-xs border border-gray-200 hover:bg-gray-50 text-gray-600 rounded-lg transition-colors flex items-center gap-1.5">
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-            </svg>
-            Upload CSV
-          </button>
           <button onClick={onAdd} className="px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-1.5">
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
             </svg>
-            Add Contact
+            Add Mailer
           </button>
           {selected.size > 0 && (
             <button onClick={handleBulkDelete} className="px-3 py-1.5 text-xs bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors flex items-center gap-1.5">
@@ -252,7 +249,7 @@ export default function ContactsTable({
       <div className="flex-1 overflow-auto">
         {filteredRows.length === 0 ? (
           <div className="flex items-center justify-center h-full text-sm text-gray-400">
-            {searchTerm ? "No records match your search." : "No contacts yet. Click 'Add Contact' or 'Upload CSV' to get started."}
+            {searchTerm ? "No mailers match your search." : "No mailers yet. Click 'Add Mailer' to create your first campaign."}
           </div>
         ) : (
           <table className="w-full text-sm border-collapse">
@@ -270,9 +267,15 @@ export default function ContactsTable({
                 {visibleCols.map((col) => (
                   <th
                     key={col.key}
-                    className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-2.5 border-b border-gray-200 whitespace-nowrap"
+                    onClick={() => handleSort(col.key)}
+                    className={`text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-2.5 border-b border-gray-200 whitespace-nowrap cursor-pointer hover:bg-gray-100 transition-colors ${sortBy === col.key ? "bg-blue-50/50" : ""}`}
                   >
-                    {col.label}
+                    <div className="flex items-center gap-1">
+                      {col.label}
+                      {sortBy === col.key && (
+                        <span className="text-blue-500">{sortDir === "asc" ? "↑" : "↓"}</span>
+                      )}
+                    </div>
                   </th>
                 ))}
               </tr>
@@ -280,42 +283,31 @@ export default function ContactsTable({
             <tbody>
               {paginated.map((row, i) => (
                 <tr
-                  key={row.email}
+                  key={row.mailer_id}
                   onDoubleClick={() => onEdit(row)}
                   className={`border-b border-gray-100 hover:bg-blue-50 cursor-pointer transition-colors group ${
                     i % 2 === 0 ? "bg-white" : "bg-gray-50/30"
-                  } ${selected.has(row.email) ? "bg-orange-50" : ""}`}
+                  } ${selected.has(row.mailer_id) ? "bg-orange-50" : ""}`}
                 >
                   <td className="px-3 py-2">
                     <input
                       type="checkbox"
-                      checked={selected.has(row.email)}
-                      onChange={() => toggleRow(row.email)}
+                      checked={selected.has(row.mailer_id)}
+                      onChange={() => toggleRow(row.mailer_id)}
                       onClick={(e) => e.stopPropagation()}
                       className="w-4 h-4 rounded border-gray-300 text-blue-600 cursor-pointer"
                     />
                   </td>
-                  {visibleCols.map((col) => {
-                    const val = row[col.key as keyof ContactRow];
-                    return (
-                      <td
-                        key={col.key}
-                        className={`px-4 py-2.5 whitespace-nowrap ${getCellClass(col.key as keyof ContactRow, val)}`}
-                      >
-                        {col.key === "email" && val ? (
-                          <a
-                            href={`mailto:${val}`}
-                            onClick={(e) => e.stopPropagation()}
-                            className="hover:underline"
-                          >
-                            {formatValue(row, col.key as keyof ContactRow)}
-                          </a>
-                        ) : (
-                          formatValue(row, col.key as keyof ContactRow)
-                        )}
-                      </td>
-                    );
-                  })}
+                  {visibleCols.map((col) => (
+                    <td
+                      key={col.key}
+                      className={`px-4 py-2.5 whitespace-nowrap ${getCellClass(col.key as keyof MailerRow, row[col.key as keyof MailerRow])}`}
+                    >
+                      {col.key === "subject_line"
+                        ? (row.subject_line?.length > 60 ? row.subject_line.slice(0, 60) + "…" : row.subject_line)
+                        : formatValue(row, col.key as keyof MailerRow)}
+                    </td>
+                  ))}
                 </tr>
               ))}
             </tbody>
@@ -327,7 +319,7 @@ export default function ContactsTable({
         <p>
           {selected.size > 0
             ? `${selected.size} of ${rows.length} selected`
-            : rows.length === 0 ? "No records" : `Showing ${Math.min((page - 1) * PAGE_SIZE + 1, rows.length)}–${Math.min(page * PAGE_SIZE, rows.length)} of ${rows.length}`}
+            : rows.length === 0 ? "No mailers" : `Showing ${Math.min((page - 1) * PAGE_SIZE + 1, rows.length)}–${Math.min(page * PAGE_SIZE, rows.length)} of ${rows.length}`}
         </p>
         <div className="flex items-center gap-1">
           <button
@@ -349,9 +341,7 @@ export default function ContactsTable({
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
           </button>
-          <span className="px-2 font-medium">
-            {page} / {totalPages}
-          </span>
+          <span className="px-2 font-medium">{page} / {totalPages}</span>
           <button
             onClick={() => onPageChange(Math.min(totalPages, page + 1))}
             disabled={page === totalPages}

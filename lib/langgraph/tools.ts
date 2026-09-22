@@ -3,31 +3,64 @@ import { ContactRow, Message } from "./state";
 
 export function getTableSchema(): string {
   return `
-Table name: contacts
+Tables: contacts, mailers, email_journey
+
+Table: contacts  (master contact list - one row per person)
 Columns:
-  - id                    (bigint, primary key, auto)
-  - name                  (text)           -- Contact person name
-  - email                 (text)           -- Contact email address
-  - company_name          (text)           -- Client company name
-  - phone_number          (text)           -- Contact phone number
-  - city                  (text)           -- City location of the project/company
-  - designation           (text)           -- Contact person's job title
-  - enquiry_received_date (date)           -- Date the enquiry was received
-  - go_no_go_decision     (text)           -- Go/No-Go decision: Approved / Not Approved / Pending
-  - proposal_sent_date    (date)           -- Date the proposal was sent to client
-  - mode_of_submission    (text)           -- How proposal was submitted: Email / Hard Copy / Ariba Portal / etc.
-  - proposal_enquiry_for  (text)           -- Service/scope being offered by GEM Engserv
-  - project_name          (text)          -- Name/title of the project
-  - proposal_value_inr    (numeric)        -- Proposal value in Indian Rupees (₹)
-  - quotation_method      (text)           -- Pricing model: Lump Sum / Man-Months / Per Day Fee / Percentage / etc.
-  - department            (text)           -- Department: PMC / QC / Rebar / Design Engineering / EAS / TA / etc.
-  - status                (text)           -- Proposal status: Won / Loss / Open / Closed
-  - inbound_outbound      (text)           -- Lead source: Inbound (enquiry received) / Outbound (proactive outreach)
-  - existing_new_customer (text)           -- Customer type: Existing / New
-  - remarks               (text)           -- Additional notes/comments
-  - type_of_customer      (text)           -- Customer category: Consultant / Contractor / Developer / Manufacturer / etc.
-  - sector                (text)           -- Industry sector: FMCG / Industrial / Real Estate / Warehousing / etc.
-  - proposal_number       (text)           -- GEM proposal/reference number (e.g., GEM/001/2025-26/R0)
+  - email              (text, primary key)        -- Contact email address. Required.
+  - name               (text)                     -- Contact person name
+  - company            (text)                     -- Company name
+  - designation        (text)                     -- Job title
+  - phone              (text)                     -- Phone number
+  - city               (text)                     -- City
+  - sector             (text)                     -- Industry sector
+  - customer_type      (text)                     -- Existing / New
+  - optin_status       (text)                     -- Subscribed / Unsubscribed / Bounced / Unknown
+  - total_sent         (integer, auto)            -- Cumulative SENT events for this email (auto-maintained by trigger)
+  - total_opens        (integer, auto)            -- Cumulative OPENED events (auto-maintained)
+  - total_clicks       (integer, auto)            -- Cumulative CLICKED events (auto-maintained)
+  - last_activity_date (timestamptz, auto)        -- Last OPENED/CLICKED timestamp (auto-maintained)
+  - engagement_score   (text, auto)               -- HOT (clicked) / WARM (opened) / COLD (no opens) (auto-maintained)
+
+Table: mailers  (campaign library - one row per mailer blast)
+Columns:
+  - mailer_id     (text, primary key)             -- e.g. M001, M002
+  - subject_line  (text, required)                 -- The email subject line (main field)
+  - template_name (text)                           -- Which email design was used
+  - sent_date     (timestamptz)                    -- When the blast was sent
+  - total_sent    (integer, auto)                  -- Cumulative SENT events (auto-maintained)
+  - delivered     (integer, auto)                  -- Cumulative DELIVERED events (auto-maintained)
+  - unique_opens  (integer, auto)                  -- Distinct emails that OPENED (auto-maintained)
+  - total_opens   (integer, auto)                  -- Total OPENED events (auto-maintained)
+  - unique_clicks (integer, auto)                  -- Distinct emails that CLICKED (auto-maintained)
+  - total_clicks  (integer, auto)                  -- Total CLICKED events (auto-maintained)
+  - bounced       (integer, auto)                  -- Cumulative BOUNCED (auto-maintained)
+  - unsubscribed  (integer, auto)                  -- Cumulative UNSUBSCRIBED (auto-maintained)
+  - open_rate     (numeric(5,2), generated)       -- unique_opens  / delivered * 100 (auto-computed)
+  - click_rate    (numeric(5,2), generated)       -- unique_clicks / delivered * 100 (auto-computed)
+
+Table: email_journey  (event log - one row per email event)
+Columns:
+  - id           (bigserial, primary key)
+  - email        (text, FK to contacts.email)
+  - mailer_id    (text, FK to mailers.mailer_id)
+  - subject_line (text)                            -- Denormalized for fast search
+  - event_type   (text, enum)                      -- SENT / DELIVERED / OPENED / CLICKED / BOUNCED / UNSUBSCRIBED
+  - timestamp    (timestamptz, default now())
+  - link_clicked (text)                            -- Which link was clicked (if event_type=CLICKED)
+  - device_info  (text)                            -- Mobile/Desktop, location
+
+Relationships:
+  contacts (1) -> (Many) email_journey
+  mailers  (1) -> (Many) email_journey
+
+Notes for SQL generation:
+  - All cumulative counters on contacts and mailers are auto-maintained by a trigger
+    after every INSERT into email_journey. Never INSERT/UPDATE total_sent/total_opens/
+    total_clicks/last_activity_date/engagement_score/unique_opens/etc directly - they
+    will be overwritten on the next journey insert.
+  - open_rate and click_rate on mailers are GENERATED ALWAYS columns - never write to them.
+  - The "best subject line" query is: SELECT * FROM mailers ORDER BY open_rate DESC.
 `.trim();
 }
 

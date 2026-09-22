@@ -1,3 +1,11 @@
+// =============================================================================
+//  Email Campaign Tracker - data types
+//  Mirrors the new 3-table schema:
+//    contacts       - master contact list (PK: email)
+//    mailers        - campaign library    (PK: mailer_id)
+//    email_journey  - event log           (PK: id)
+// =============================================================================
+
 import { Annotation } from "@langchain/langgraph";
 
 export interface Message {
@@ -5,32 +13,63 @@ export interface Message {
   content: string;
 }
 
+// ---- contacts -------------------------------------------------------------
 export interface ContactRow {
-  id: number;
-  name: string;
   email: string;
-  company_name: string;
-  phone_number: string;
-  city: string;
-  designation: string;
-  enquiry_received_date: string | null;
-  go_no_go_decision: string | null;
-  proposal_sent_date: string | null;
-  mode_of_submission: string | null;
-  proposal_enquiry_for: string | null;
-  project_name: string | null;
-  proposal_value_inr: number | null;
-  quotation_method: string | null;
-  department: string | null;
-  status: string | null;
-  inbound_outbound: string | null;
-  existing_new_customer: string | null;
-  remarks: string | null;
-  type_of_customer: string | null;
+  name: string | null;
+  company: string | null;
+  designation: string | null;
+  phone: string | null;
+  city: string | null;
   sector: string | null;
-  proposal_number: string | null;
+  customer_type: string | null;     // Existing / New
+  optin_status: string | null;      // Subscribed / Unsubscribed / Bounced / Unknown
+  total_sent: number;
+  total_opens: number;
+  total_clicks: number;
+  last_activity_date: string | null;
+  engagement_score: string | null;  // HOT / WARM / COLD
 }
 
+// ---- mailers ---------------------------------------------------------------
+export interface MailerRow {
+  mailer_id: string;          // e.g. M001
+  subject_line: string;
+  template_name: string | null;
+  sent_date: string | null;
+  total_sent: number;
+  delivered: number;
+  unique_opens: number;
+  total_opens: number;
+  unique_clicks: number;
+  total_clicks: number;
+  bounced: number;
+  unsubscribed: number;
+  open_rate: number | null;   // computed % (0-100)
+  click_rate: number | null;  // computed % (0-100)
+}
+
+// ---- email_journey ---------------------------------------------------------
+export type JourneyEventType =
+  | "SENT"
+  | "DELIVERED"
+  | "OPENED"
+  | "CLICKED"
+  | "BOUNCED"
+  | "UNSUBSCRIBED";
+
+export interface JourneyRow {
+  id: number;
+  email: string;
+  mailer_id: string;
+  subject_line: string | null;
+  event_type: JourneyEventType;
+  timestamp: string;
+  link_clicked: string | null;
+  device_info: string | null;
+}
+
+// ---- LLM provider + graph state -------------------------------------------
 export type LLMProvider = "openrouter" | "nvidia";
 
 export const QueryGraphState = Annotation.Root({

@@ -10,11 +10,8 @@ export async function GET(req: NextRequest) {
   }
 
   const allowedColumns = [
-    "proposal_number", "project_name", "name", "email", "phone_number",
-    "designation", "company_name", "type_of_customer", "existing_new_customer",
-    "sector", "city", "status", "department", "go_no_go_decision",
-    "inbound_outbound", "proposal_enquiry_for", "quotation_method",
-    "mode_of_submission",
+    "name", "company", "designation", "phone", "city", "sector",
+    "customer_type", "optin_status", "engagement_score",
   ];
 
   if (!allowedColumns.includes(column)) {
