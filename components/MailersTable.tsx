@@ -42,6 +42,22 @@ interface Props {
   onDeleteRows: (ids: string[]) => void;
 }
 
+interface MailerFilters {
+  min_open_rate: string;       // number, "" = any
+  min_click_rate: string;      // number
+  min_unsubscribe_rate: string;
+  min_hardbounce_rate: string;
+  sent_after: string;          // YYYY-MM-DD
+  sent_before: string;         // YYYY-MM-DD
+  has_unsubscribed: string;    // "" any / "yes" / "no"
+  has_hardbounced: string;
+}
+
+const EMPTY_FILTERS: MailerFilters = {
+  min_open_rate: "", min_click_rate: "", min_unsubscribe_rate: "", min_hardbounce_rate: "",
+  sent_after: "", sent_before: "", has_unsubscribed: "", has_hardbounced: "",
+};
+
 export default function MailersTable({
   rows, page, onPageChange, onEdit, onAdd, onDeleteRows,
 }: Props) {
@@ -49,6 +65,9 @@ export default function MailersTable({
   const [searchTerm, setSearchTerm] = useState("");
   const [sortBy, setSortBy] = useState<keyof MailerRow | null>(null);
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [filters, setFilters] = useState<MailerFilters>({ ...EMPTY_FILTERS });
+  const [showFilters, setShowFilters] = useState(false);
+  const activeFilterCount = (Object.keys(filters) as (keyof MailerFilters)[]).filter((k) => filters[k] !== "").length;
 
   let filteredRows = searchTerm.trim()
     ? rows.filter((row) =>
@@ -59,6 +78,45 @@ export default function MailersTable({
         })
       )
     : rows;
+
+  // Apply structured filters
+  filteredRows = filteredRows.filter((row) => {
+    if (filters.min_open_rate) {
+      const min = parseFloat(filters.min_open_rate);
+      if (!isNaN(min) && (row.open_rate ?? 0) < min) return false;
+    }
+    if (filters.min_click_rate) {
+      const min = parseFloat(filters.min_click_rate);
+      if (!isNaN(min) && (row.click_rate ?? 0) < min) return false;
+    }
+    if (filters.min_unsubscribe_rate) {
+      const min = parseFloat(filters.min_unsubscribe_rate);
+      if (!isNaN(min) && (row.unsubscribe_rate ?? 0) < min) return false;
+    }
+    if (filters.min_hardbounce_rate) {
+      const min = parseFloat(filters.min_hardbounce_rate);
+      if (!isNaN(min) && (row.hardbounce_rate ?? 0) < min) return false;
+    }
+    if (filters.sent_after) {
+      const after = new Date(filters.sent_after).getTime();
+      if (!isNaN(after)) {
+        const sent = row.sent_date ? new Date(row.sent_date).getTime() : 0;
+        if (sent < after) return false;
+      }
+    }
+    if (filters.sent_before) {
+      const before = new Date(filters.sent_before).getTime();
+      if (!isNaN(before)) {
+        const sent = row.sent_date ? new Date(row.sent_date).getTime() : 0;
+        if (sent > before) return false;
+      }
+    }
+    if (filters.has_unsubscribed === "yes" && (row.unsubscribed_count ?? 0) === 0) return false;
+    if (filters.has_unsubscribed === "no"  && (row.unsubscribed_count ?? 0) > 0) return false;
+    if (filters.has_hardbounced === "yes" && (row.hardbounced_count ?? 0) === 0) return false;
+    if (filters.has_hardbounced === "no"  && (row.hardbounced_count ?? 0) > 0) return false;
+    return true;
+  });
 
   if (sortBy) {
     filteredRows = [...filteredRows].sort((a, b) => {
@@ -222,6 +280,24 @@ export default function MailersTable({
               Clear search
             </button>
           )}
+          {/* Filters toggle button */}
+          <button
+            onClick={() => setShowFilters((s) => !s)}
+            className={`px-3 py-1.5 text-xs rounded-lg transition-colors flex items-center gap-1.5 ${
+              activeFilterCount > 0 || showFilters
+                ? "bg-blue-100 text-blue-700 hover:bg-blue-200"
+                : "text-gray-500 hover:text-gray-700 hover:bg-gray-100"
+            }`}
+            title="Toggle filters"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+            </svg>
+            Filters
+            {activeFilterCount > 0 && (
+              <span className="bg-blue-600 text-white text-[10px] px-1.5 rounded-full">{activeFilterCount}</span>
+            )}
+          </button>
           <div className="relative">
             <input
               type="text"
@@ -256,6 +332,102 @@ export default function MailersTable({
           )}
         </div>
       </div>
+
+      {/* Filter bar — shown when toggle is on */}
+      {showFilters && (
+        <div className="px-4 py-3 border-b border-gray-200 bg-gray-50/70 flex flex-wrap items-end gap-3">
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] font-medium text-gray-500 uppercase tracking-wider">Min Open Rate (%)</label>
+            <input
+              type="number" min={0} max={100} step={1}
+              value={filters.min_open_rate}
+              onChange={(e) => { setFilters((f) => ({ ...f, min_open_rate: e.target.value })); onPageChange(1); }}
+              placeholder="e.g. 50"
+              className="w-24 px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-100 focus:border-blue-300"
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] font-medium text-gray-500 uppercase tracking-wider">Min Click Rate (%)</label>
+            <input
+              type="number" min={0} max={100} step={1}
+              value={filters.min_click_rate}
+              onChange={(e) => { setFilters((f) => ({ ...f, min_click_rate: e.target.value })); onPageChange(1); }}
+              placeholder="e.g. 10"
+              className="w-24 px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-100 focus:border-blue-300"
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] font-medium text-gray-500 uppercase tracking-wider">Min Unsub Rate (%)</label>
+            <input
+              type="number" min={0} max={100} step={0.1}
+              value={filters.min_unsubscribe_rate}
+              onChange={(e) => { setFilters((f) => ({ ...f, min_unsubscribe_rate: e.target.value })); onPageChange(1); }}
+              placeholder="e.g. 1"
+              className="w-24 px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-100 focus:border-blue-300"
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] font-medium text-gray-500 uppercase tracking-wider">Min Bounce Rate (%)</label>
+            <input
+              type="number" min={0} max={100} step={0.1}
+              value={filters.min_hardbounce_rate}
+              onChange={(e) => { setFilters((f) => ({ ...f, min_hardbounce_rate: e.target.value })); onPageChange(1); }}
+              placeholder="e.g. 1"
+              className="w-24 px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-100 focus:border-blue-300"
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] font-medium text-gray-500 uppercase tracking-wider">Sent After</label>
+            <input
+              type="date"
+              value={filters.sent_after}
+              onChange={(e) => { setFilters((f) => ({ ...f, sent_after: e.target.value })); onPageChange(1); }}
+              className="px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-100 focus:border-blue-300"
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] font-medium text-gray-500 uppercase tracking-wider">Sent Before</label>
+            <input
+              type="date"
+              value={filters.sent_before}
+              onChange={(e) => { setFilters((f) => ({ ...f, sent_before: e.target.value })); onPageChange(1); }}
+              className="px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-100 focus:border-blue-300"
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] font-medium text-gray-500 uppercase tracking-wider">Has Unsubscribed?</label>
+            <select
+              value={filters.has_unsubscribed}
+              onChange={(e) => { setFilters((f) => ({ ...f, has_unsubscribed: e.target.value })); onPageChange(1); }}
+              className="px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-100 focus:border-blue-300 bg-white"
+            >
+              <option value="">Any</option>
+              <option value="yes">Yes (≥1)</option>
+              <option value="no">No (=0)</option>
+            </select>
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] font-medium text-gray-500 uppercase tracking-wider">Has Hard Bounced?</label>
+            <select
+              value={filters.has_hardbounced}
+              onChange={(e) => { setFilters((f) => ({ ...f, has_hardbounced: e.target.value })); onPageChange(1); }}
+              className="px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-100 focus:border-blue-300 bg-white"
+            >
+              <option value="">Any</option>
+              <option value="yes">Yes (≥1)</option>
+              <option value="no">No (=0)</option>
+            </select>
+          </div>
+          {activeFilterCount > 0 && (
+            <button
+              onClick={() => { setFilters({ ...EMPTY_FILTERS }); onPageChange(1); }}
+              className="px-3 py-1.5 text-xs text-orange-500 hover:text-orange-700 hover:bg-orange-50 rounded-lg transition-colors ml-auto"
+            >
+              Clear filters ({activeFilterCount})
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Horizontal-scroll wrapper */}
       <div className="flex-1 overflow-auto">

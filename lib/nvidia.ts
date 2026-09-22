@@ -27,7 +27,11 @@ const NVIDIA_GATEWAY = "https://integrate.api.nvidia.com/v1/chat/completions";
 const NVIDIA_DEFAULT_MODEL = "nvidia/nemotron-3-super-120b-a12b";
 const NVIDIA_DEFAULT_TEMPERATURE = 0.3;
 const NVIDIA_DEFAULT_TOP_P = 1.0;
-const NVIDIA_DEFAULT_MAX_TOKENS = 4096;
+// Raised from 4096 to 16384. Nemotron sometimes burns the entire 4096 budget on
+// reasoning_content (chain-of-thought) and produces 0 chars of actual content,
+// causing the "empty content (reasoning_chars=0)" error. 16k tokens is enough
+// for both reasoning + content for our short prompts.
+const NVIDIA_DEFAULT_MAX_TOKENS = 16384;
 const NVIDIA_DEFAULT_TIMEOUT_MS = 55_000;
 
 export interface NvidiaChatOptions {
@@ -54,6 +58,10 @@ export interface NvidiaChatResult {
 
 /**
  * Determines if an error is retryable (timeout, rate limit, or server error).
+ *
+ * Also treats "empty content" as retryable — Nemotron sometimes burns its
+ * entire token budget on reasoning_content and returns 0 chars of actual
+ * content. Retrying with the same params usually succeeds.
  */
 function isRetryableError(err: unknown): boolean {
   const e = err as { status?: number; statusCode?: number; code?: string; constructor?: { name?: string }; message?: string };
@@ -64,6 +72,8 @@ function isRetryableError(err: unknown): boolean {
   if (["APIConnectionError", "APITimeoutError", "ConnectionError"].includes(errName)) return true;
   const msg: string = (e?.message || "").toLowerCase();
   if (msg.includes("timeout") || msg.includes("rate limit") || msg.includes("too many requests") || msg.includes("econnreset")) return true;
+  // Empty content from Nemotron is retryable
+  if (msg.includes("empty content")) return true;
   return false;
 }
 

@@ -11,6 +11,7 @@ import CSVUploadModal from "@/components/CSVUploadModal";
 import { ContactRow, MailerRow } from "@/lib/langgraph/state";
 
 type TabKey = "contacts" | "mailers";
+type MobileView = "table" | "chat";
 
 async function fetchAllContacts(): Promise<ContactRow[]> {
   const res = await fetch("/api/contacts");
@@ -27,6 +28,9 @@ async function fetchAllMailers(): Promise<MailerRow[]> {
 export default function HomePage() {
   const [sessionId]         = useState(() => uuidv4());
   const [tab, setTab]       = useState<TabKey>("contacts");
+  // On narrow screens, only one of (table, chat) is shown at a time.
+  // On wide screens (md+), both are shown side-by-side and mobileView is ignored.
+  const [mobileView, setMobileView] = useState<MobileView>("table");
 
   // Contacts state
   const [rows, setRows]         = useState<ContactRow[]>([]);
@@ -128,7 +132,10 @@ export default function HomePage() {
 
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
-      <div className="flex-1 flex flex-col border-r border-gray-200 min-w-0 overflow-hidden">
+      {/* Main table area — full-width on mobile, flex-1 on md+ */}
+      <div className={`flex-1 flex flex-col border-r border-gray-200 min-w-0 overflow-hidden ${
+        mobileView === "chat" ? "hidden md:flex" : "flex"
+      }`}>
         {/* Tab bar */}
         <div className="flex items-center gap-1 px-4 pt-3 bg-white border-b border-gray-200">
           <TabButton
@@ -143,6 +150,17 @@ export default function HomePage() {
             active={tab === "mailers"}
             onClick={() => setTab("mailers")}
           />
+          {/* Mobile-only: chat toggle button */}
+          <button
+            onClick={() => setMobileView("chat")}
+            className="ml-auto md:hidden flex items-center gap-1.5 px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+            title="Open chat"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+            </svg>
+            Chat
+          </button>
         </div>
 
         {/* Tab body */}
@@ -172,12 +190,32 @@ export default function HomePage() {
         </div>
       </div>
 
-      <div className="w-[400px] flex-shrink-0 flex flex-col overflow-hidden shadow-lg">
-        <ChatPanel
-          sessionId={sessionId}
-          currentRows={rows}
-          onTableUpdate={handleTableUpdate}
-        />
+      {/* Chat panel — fixed width on md+, full-width overlay on mobile */}
+      <div className={`flex flex-col overflow-hidden shadow-lg ${
+        mobileView === "chat"
+          ? "flex w-full md:w-[400px] md:flex-shrink-0"
+          : "hidden md:flex md:w-[400px] md:flex-shrink-0"
+      }`}>
+        {/* Mobile-only: back button in chat header */}
+        <div className="md:hidden flex items-center justify-between px-4 py-2 border-b border-gray-200 bg-white">
+          <button
+            onClick={() => setMobileView("table")}
+            className="flex items-center gap-1.5 text-xs text-gray-600 hover:text-gray-900 transition-colors"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+            </svg>
+            Back to table
+          </button>
+          <span className="text-xs text-gray-400 font-medium">AI Chat</span>
+        </div>
+        <div className="flex-1 overflow-hidden">
+          <ChatPanel
+            sessionId={sessionId}
+            currentRows={rows}
+            onTableUpdate={handleTableUpdate}
+          />
+        </div>
       </div>
 
       {tab === "contacts" && (editRecord !== null || editMode === "add") && (

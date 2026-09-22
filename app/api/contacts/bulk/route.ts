@@ -8,18 +8,20 @@ export const runtime = "nodejs";
  *
  * Body: { rows: Array<Partial<ContactRow>> }
  *
- * Dedup logic (per user spec):
- *   For each row in the upload, check if an existing contact matches
- *   ALL of these 6 fields exactly:
- *     - name (case-insensitive, trimmed)
- *     - company (case-insensitive, trimmed)
- *     - designation (case-insensitive, trimmed)
- *     - email (case-insensitive, trimmed)
- *     - phone (case-insensitive, trimmed)
- *     - mailer_id (case-sensitive, trimmed)
- *   If all 6 match an existing record → SKIP (don't insert, don't update).
- *   Otherwise → UPSERT (insert if email is new, update if email exists
- *   with different other fields).
+ * Dedup logic (per user spec v2.3):
+ *   For each row in the upload:
+ *     - If email does NOT exist in DB → INSERT (new contact)
+ *     - If email exists AND all 6 fields match exactly → SKIP (exact dup)
+ *     - If email exists AND any of the 6 fields differ → SKIP (don't overwrite)
+ *
+ *   The 6 fields checked: name, company, designation, email, phone, mailer_id
+ *   (case-insensitive, trimmed for comparison).
+ *
+ *   This means: CSV upload NEVER overwrites existing records. To update a
+ *   contact, edit it manually in the UI.
+ *
+ * Response: { inserted, skipped, skippedRows, total }
+ *   skippedRows: array of { email, reason } so the UI can show a summary.
  *
  * Tags: comma-separated string in CSV → normalized to text[] (lowercase, deduped).
  */
@@ -159,42 +161,64 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  // Step 4: Apply dedup — skip rows that exactly match all 6 fields of an existing contact
-  const toUpsert: CleanedRow[] = [];
+  // Step 4: Apply dedup — skip ANY row whose email already exists in DB.
+  // (User spec v2.3: never overwrite existing records via CSV import.
+  //  To update a contact, edit it manually in the UI.)
+  const toInsert: CleanedRow[] = [];
   const skipped: { email: string; reason: string }[] = [];
   for (const row of cleanedRows) {
     const existingMatches = existingByEmail.get(normalizeStr(row.email)) ?? [];
+    if (existingMatches.length === 0) {
+      // Email is new — insert
+      toInsert.push(row);
+      continue;
+    }
+    // Email already exists — check if it's an exact match (same 6 fields)
     const isExactMatch = existingMatches.some((e) =>
       normalizeStr(e.name)        === normalizeStr(row.name)        &&
       normalizeStr(e.company)     === normalizeStr(row.company)     &&
       normalizeStr(e.designation)  === normalizeStr(row.designation) &&
       normalizeStr(e.phone)        === normalizeStr(row.phone)        &&
-      normalizeStr(e.mailer_id)   === normalizeStr(row.mailer_id)    // mailer_id treated case-insensitive here for matching
+      normalizeStr(e.mailer_id)   === normalizeStr(row.mailer_id)
     );
     if (isExactMatch) {
-      skipped.push({ email: row.email, reason: "exact match on Name+Company+Designation+Email+Phone+Mailer ID" });
-      continue;
-    }
-    toUpsert.push(row);
-  }
-
-  // Step 5: Upsert the non-skipped rows
-  let inserted = 0;
-  let upsertErr: string | null = null;
-  if (toUpsert.length > 0) {
-    const { data: upsertData, error: upsertError } = await supabase
-      .from("contacts")
-      .upsert(toUpsert, { onConflict: "email", ignoreDuplicates: false })
-      .select();
-    if (upsertError) {
-      upsertErr = upsertError.message;
+      skipped.push({
+        email: row.email,
+        reason: "exact duplicate (all fields match existing record)",
+      });
     } else {
-      inserted = upsertData?.length ?? 0;
+      // Email exists with different other fields — DON'T overwrite (preserve existing data)
+      const diffs: string[] = [];
+      const ex = existingMatches[0];
+      if (normalizeStr(ex.name)       !== normalizeStr(row.name))       diffs.push("name");
+      if (normalizeStr(ex.company)    !== normalizeStr(row.company))     diffs.push("company");
+      if (normalizeStr(ex.designation) !== normalizeStr(row.designation)) diffs.push("designation");
+      if (normalizeStr(ex.phone)      !== normalizeStr(row.phone))       diffs.push("phone");
+      if (normalizeStr(ex.mailer_id)  !== normalizeStr(row.mailer_id))   diffs.push("mailer_id");
+      skipped.push({
+        email: row.email,
+        reason: `email already exists with different ${diffs.join(", ")} — not overwriting (edit manually to update)`,
+      });
     }
   }
 
-  if (upsertErr) {
-    return NextResponse.json({ error: upsertErr }, { status: 500 });
+  // Step 5: Insert the new rows (no upsert — only new emails go in)
+  let inserted = 0;
+  let insertErr: string | null = null;
+  if (toInsert.length > 0) {
+    const { data: insertData, error: insertError } = await supabase
+      .from("contacts")
+      .insert(toInsert)
+      .select();
+    if (insertError) {
+      insertErr = insertError.message;
+    } else {
+      inserted = insertData?.length ?? 0;
+    }
+  }
+
+  if (insertErr) {
+    return NextResponse.json({ error: insertErr }, { status: 500 });
   }
 
   return NextResponse.json({
