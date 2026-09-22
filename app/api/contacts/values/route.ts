@@ -9,9 +9,10 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "column is required" }, { status: 400 });
   }
 
+  // Allow listing existing mailer_ids too (for the contact form's autocomplete)
   const allowedColumns = [
     "name", "company", "designation", "phone", "city", "sector",
-    "customer_type", "optin_status", "engagement_score",
+    "optin_status", "engagement_score", "mailer_id",
   ];
 
   if (!allowedColumns.includes(column)) {

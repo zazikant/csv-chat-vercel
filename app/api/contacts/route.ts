@@ -21,6 +21,21 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "email is required" }, { status: 400 });
   }
 
+  // Strip auto-maintained fields - they are managed by the trigger
+  for (const f of [
+    "last_activity_date","engagement_score","created_at","updated_at",
+  ]) {
+    delete body[f];
+  }
+
+  // Ensure numeric defaults
+  if (body.opens == null || body.opens === "") body.opens = 0;
+  if (body.clicks == null || body.clicks === "") body.clicks = 0;
+  body.opens  = Number(body.opens)  || 0;
+  body.clicks = Number(body.clicks) || 0;
+  if (body.unsubscribed == null) body.unsubscribed = false;
+  body.unsubscribed = Boolean(body.unsubscribed);
+
   const { data, error } = await supabase
     .from("contacts")
     .insert(body)
@@ -41,12 +56,22 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ error: "email is required" }, { status: 400 });
   }
 
-  // Strip auto-managed fields - they are maintained by triggers
+  // Strip auto-maintained fields - they are managed by the trigger
   for (const f of [
-    "total_sent","total_opens","total_clicks",
     "last_activity_date","engagement_score","created_at","updated_at",
   ]) {
     delete fields[f];
+  }
+
+  // Coerce numeric/boolean fields if present
+  if ("opens" in fields) {
+    fields.opens = fields.opens === "" || fields.opens == null ? 0 : Number(fields.opens) || 0;
+  }
+  if ("clicks" in fields) {
+    fields.clicks = fields.clicks === "" || fields.clicks == null ? 0 : Number(fields.clicks) || 0;
+  }
+  if ("unsubscribed" in fields) {
+    fields.unsubscribed = Boolean(fields.unsubscribed);
   }
 
   const { data, error } = await supabase

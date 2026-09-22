@@ -11,14 +11,22 @@ interface Props {
   onSave: () => void;
 }
 
+const OPTIN_STATUSES = ["Subscribed", "Hard Bounced", "Unsubscribed"];
+
+interface MailerOption { mailer_id: string; subject_line: string }
+
 export default function EditModal({ record, mode, onClose, onSave }: Props) {
   const [form, setForm]   = useState<Partial<ContactRow>>({});
   const [saving, setSaving] = useState(false);
   const [error, setError]   = useState("");
   const [deleting, setDeleting] = useState(false);
+  const [mailerOptions, setMailerOptions] = useState<MailerOption[]>([]);
 
   useEffect(() => {
-    setForm(mode === "edit" && record ? { ...record } : {});
+    setForm(mode === "edit" && record
+      ? { ...record, opens: record.opens ?? 0, clicks: record.clicks ?? 0, unsubscribed: record.unsubscribed ?? false }
+      : { opens: 0, clicks: 0, unsubscribed: false, optin_status: "Subscribed" }
+    );
     setError("");
   }, [record, mode]);
 
@@ -30,8 +38,31 @@ export default function EditModal({ record, mode, onClose, onSave }: Props) {
     return () => window.removeEventListener("keydown", handleKey);
   }, [onClose]);
 
-  function setVal(key: keyof ContactRow, value: string | number | null) {
-    setForm((prev) => ({ ...prev, [key]: value ?? null }));
+  // Fetch mailer_id options for the autocomplete
+  useEffect(() => {
+    fetch("/api/mailers?values=1")
+      .then((r) => r.json())
+      .then((d) => {
+        if (Array.isArray(d)) setMailerOptions(d as MailerOption[]);
+      })
+      .catch(() => setMailerOptions([]));
+  }, []);
+
+  function setVal<T extends keyof ContactRow>(key: T, value: ContactRow[T]) {
+    setForm((prev) => ({ ...prev, [key]: value }));
+  }
+
+  // When user picks a different mailer, reset opens/clicks/unsubscribed to defaults
+  // (per the design: opens/clicks/unsubscribed are per (contact, mailer))
+  function handleMailerChange(mailerId: string) {
+    const trimmed = mailerId.trim();
+    const isSameAsForm = (form.mailer_id ?? "") === trimmed;
+    setForm((prev) => ({
+      ...prev,
+      mailer_id: trimmed || null,
+      // Only reset counters if the mailer actually changed
+      ...(isSameAsForm ? {} : { opens: 0, clicks: 0, unsubscribed: false }),
+    }));
   }
 
   async function handleSave() {
@@ -47,14 +78,15 @@ export default function EditModal({ record, mode, onClose, onSave }: Props) {
       // Strip auto-maintained fields before sending
       const payload: Record<string, unknown> = { ...form };
       for (const f of [
-        "total_sent","total_opens","total_clicks","last_activity_date",
-        "engagement_score","created_at","updated_at","legacy_id","legacy_remarks",
+        "last_activity_date","engagement_score","created_at","updated_at",
       ]) {
         delete payload[f];
       }
       if (mode === "edit") {
         payload.email = record!.email; // PK is immutable on update
       }
+      // Normalize empty mailer_id to null
+      if (!payload.mailer_id) payload.mailer_id = null;
       const res = await fetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
@@ -74,7 +106,7 @@ export default function EditModal({ record, mode, onClose, onSave }: Props) {
   }
 
   async function handleDelete() {
-    if (!confirm("Delete this contact? This will also delete their email_journey rows. This cannot be undone.")) return;
+    if (!confirm("Delete this contact? This cannot be undone.")) return;
     setDeleting(true);
     setError("");
     try {
@@ -112,9 +144,10 @@ export default function EditModal({ record, mode, onClose, onSave }: Props) {
       {type === "number" ? (
         <input
           type="number"
+          min={0}
           value={(form[key] as number) ?? ""}
           disabled={disabled}
-          onChange={(e) => setVal(key, e.target.value ? Number(e.target.value) : null)}
+          onChange={(e) => setVal(key, (e.target.value ? Number(e.target.value) : 0) as never)}
           className="w-full px-3 py-2 text-sm text-gray-900 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300 placeholder-gray-500 disabled:bg-gray-50 disabled:text-gray-400"
           placeholder={placeholder}
         />
@@ -123,7 +156,7 @@ export default function EditModal({ record, mode, onClose, onSave }: Props) {
           type="email"
           value={(form[key] as string) || ""}
           disabled={disabled}
-          onChange={(e) => setVal(key, e.target.value)}
+          onChange={(e) => setVal(key, e.target.value as never)}
           className="w-full px-3 py-2 text-sm text-gray-900 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300 placeholder-gray-500 disabled:bg-gray-50 disabled:text-gray-400"
           placeholder={placeholder}
         />
@@ -131,7 +164,7 @@ export default function EditModal({ record, mode, onClose, onSave }: Props) {
         <textarea
           value={(form[key] as string) || ""}
           disabled={disabled}
-          onChange={(e) => setVal(key, e.target.value)}
+          onChange={(e) => setVal(key, e.target.value as never)}
           rows={3}
           placeholder={placeholder}
           className="w-full px-3 py-2 text-sm text-gray-900 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300 resize-none placeholder-gray-500"
@@ -140,7 +173,7 @@ export default function EditModal({ record, mode, onClose, onSave }: Props) {
         <FieldSuggest
           column={key}
           value={(form[key] as string) || ""}
-          onChange={(v) => setVal(key, v)}
+          onChange={(v) => setVal(key, v as never)}
           placeholder={placeholder}
           className="w-full"
         />
@@ -189,18 +222,73 @@ export default function EditModal({ record, mode, onClose, onSave }: Props) {
 
           {section("Contact", <>
             {field("phone", "Phone", "text", false, "e.g. +91 9876543210")}
-            {field("customer_type", "Customer Type", "text", false, "Existing / New")}
-            {field("optin_status", "Opt-in Status", "text", false, "Subscribed / Unsubscribed / Bounced")}
+            {/* Opt-in status as dropdown */}
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1.5">Opt-in Status</label>
+              <select
+                value={(form.optin_status as string) || "Subscribed"}
+                onChange={(e) => setVal("optin_status", e.target.value as never)}
+                className="w-full px-3 py-2 text-sm text-gray-900 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300 bg-white"
+              >
+                {OPTIN_STATUSES.map((s) => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+            </div>
+          </>)}
+
+          {section("Mailer Engagement (manual)", <>
+            {/* Mailer ID autocomplete */}
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1.5">Mailer ID</label>
+              <input
+                type="text"
+                list="mailer-options"
+                value={(form.mailer_id as string) || ""}
+                onChange={(e) => handleMailerChange(e.target.value)}
+                placeholder="e.g. M001 (type or pick)"
+                className="w-full px-3 py-2 text-sm text-gray-900 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300 placeholder-gray-500 font-mono"
+              />
+              <datalist id="mailer-options">
+                {mailerOptions.map((m) => (
+                  <option key={m.mailer_id} value={m.mailer_id}>
+                    {m.subject_line}
+                  </option>
+                ))}
+              </datalist>
+              <p className="text-xs text-gray-400 mt-1">
+                {mailerOptions.length > 0
+                  ? `${mailerOptions.length} mailer${mailerOptions.length > 1 ? "s" : ""} available`
+                  : "No mailers yet — create one in the Mailers tab first"}
+              </p>
+            </div>
+
+            {field("opens", "Opens (count)", "number", false, "0", false)}
+            {field("clicks", "Clicks (count)", "number", false, "0", false)}
+
+            {/* Unsubscribed checkbox */}
+            <div className="flex items-end pb-2">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={Boolean(form.unsubscribed)}
+                  onChange={(e) => setVal("unsubscribed", e.target.checked as never)}
+                  className="w-4 h-4 rounded border-gray-300 text-blue-600 cursor-pointer"
+                />
+                <span className="text-sm text-gray-700">Unsubscribed</span>
+              </label>
+            </div>
           </>)}
 
           {mode === "edit" && (
             <div className="px-4 py-3 bg-blue-50 border border-blue-100 rounded-lg text-xs text-blue-700">
-              <strong>Engagement metrics</strong> (auto-maintained):
-              <div className="grid grid-cols-4 gap-2 mt-2">
-                <div><span className="text-gray-500">Sent:</span> {record?.total_sent ?? 0}</div>
-                <div><span className="text-gray-500">Opens:</span> {record?.total_opens ?? 0}</div>
-                <div><span className="text-gray-500">Clicks:</span> {record?.total_clicks ?? 0}</div>
-                <div><span className="text-gray-500">Score:</span> {record?.engagement_score ?? "COLD"}</div>
+              <strong>Auto-maintained fields</strong> (read-only):
+              <div className="grid grid-cols-2 gap-2 mt-2">
+                <div><span className="text-gray-500">Engagement:</span> {record?.engagement_score ?? "COLD"}</div>
+                <div><span className="text-gray-500">Last activity:</span> {record?.last_activity_date ? new Date(record.last_activity_date).toLocaleString() : "—"}</div>
+              </div>
+              <div className="mt-2 text-gray-500">
+                These update automatically when you save Opens / Clicks / Unsubscribed above. The assigned Mailer's counters in the Mailers tab also update automatically.
               </div>
             </div>
           )}

@@ -5,7 +5,8 @@ import { ContactRow } from "@/lib/langgraph/state";
 
 const TEMPLATE_HEADERS: (keyof ContactRow)[] = [
   "email", "name", "company", "designation", "phone",
-  "city", "sector", "customer_type", "optin_status",
+  "city", "sector", "optin_status", "mailer_id",
+  "opens", "clicks", "unsubscribed",
 ];
 
 const FIELD_LABELS: Record<string, string> = {
@@ -16,8 +17,11 @@ const FIELD_LABELS: Record<string, string> = {
   phone: "Phone",
   city: "City",
   sector: "Sector",
-  customer_type: "Customer Type",
   optin_status: "Opt-in Status",
+  mailer_id: "Mailer ID",
+  opens: "Opens",
+  clicks: "Clicks",
+  unsubscribed: "Unsubscribed",
 };
 
 interface ParsedRow {
@@ -50,7 +54,8 @@ export default function CSVUploadModal({ onClose, onUpload }: Props) {
     const example = [
       "rajesh@contractor.com", "Rajesh Kumar", "ABC Contractors",
       "Project Manager", "+91 9876543210", "Mumbai",
-      "Infrastructure", "New", "Subscribed",
+      "Infrastructure", "Subscribed", "M001",
+      "3", "1", "FALSE",
     ];
     const csv = [headers, example.map((v) => v.includes(",") ? `"${v}"` : v)]
       .map((r) => r.join(","))
@@ -73,6 +78,17 @@ export default function CSVUploadModal({ onClose, onUpload }: Props) {
       if (trimmed) data[key] = trimmed as never;
       return trimmed;
     };
+    const num = (v: string | undefined, key: keyof ContactRow) => {
+      const trimmed = (v || "").trim();
+      if (!trimmed) { (data as Record<string, unknown>)[key] = 0; return; }
+      const n = parseInt(trimmed, 10);
+      if (!isNaN(n) && n >= 0) (data as Record<string, unknown>)[key] = n;
+      else { (data as Record<string, unknown>)[key] = 0; errors.push(`${key} must be a non-negative integer`); }
+    };
+    const bool = (v: string | undefined, key: keyof ContactRow) => {
+      const trimmed = (v || "").trim().toLowerCase();
+      (data as Record<string, unknown>)[key] = ["true", "yes", "1", "y"].includes(trimmed);
+    };
 
     str(row.email, "email");
     str(row.name, "name");
@@ -81,8 +97,11 @@ export default function CSVUploadModal({ onClose, onUpload }: Props) {
     str(row.phone, "phone");
     str(row.city, "city");
     str(row.sector, "sector");
-    str(row.customer_type, "customer_type");
     str(row.optin_status, "optin_status");
+    str(row.mailer_id, "mailer_id");
+    num(row.opens, "opens");
+    num(row.clicks, "clicks");
+    bool(row.unsubscribed, "unsubscribed");
 
     if (!data.email) errors.push("email is required (primary key)");
 
@@ -109,10 +128,16 @@ export default function CSVUploadModal({ onClose, onUpload }: Props) {
       phone_number: "phone",
       city: "city",
       sector: "sector",
-      customer_type: "customer_type",
-      type_of_customer: "customer_type",
       optin_status: "optin_status",
       opt_in_status: "optin_status",
+      mailer_id: "mailer_id",
+      mailer: "mailer_id",
+      opens: "opens",
+      open_count: "opens",
+      clicks: "clicks",
+      click_count: "clicks",
+      unsubscribed: "unsubscribed",
+      unsub: "unsubscribed",
     };
 
     const result: ParsedRow[] = [];
@@ -292,8 +317,10 @@ export default function CSVUploadModal({ onClose, onUpload }: Props) {
 
             <div className="px-6 py-4 border-t border-gray-100 bg-gray-50">
               <p className="text-xs text-gray-400">
-                Template fields: <strong>Email</strong> (required), Name, Company, Designation, Phone, City, Sector, Customer Type, Opt-in Status.
-                Engagement metrics (total_sent, total_opens, total_clicks, engagement_score) are auto-maintained by triggers.
+                Template fields: <strong>Email</strong> (required), Name, Company, Designation,
+                Phone, City, Sector, Opt-in Status (Subscribed / Hard Bounced / Unsubscribed),
+                Mailer ID, Opens (int), Clicks (int), Unsubscribed (TRUE/FALSE).
+                Engagement (last_activity_date, engagement_score) and Mailer counters are auto-maintained.
               </p>
             </div>
           </div>
@@ -323,7 +350,7 @@ export default function CSVUploadModal({ onClose, onUpload }: Props) {
                   No data rows found in file. Make sure headers are in the first row.
                 </div>
               ) : (
-                <table className="w-full text-xs border-collapse">
+                <table className="min-w-max text-xs border-collapse">
                   <thead className="sticky top-0 bg-gray-50 z-10">
                     <tr>
                       <th className="text-left text-gray-400 font-medium px-2 py-2 w-8">#</th>

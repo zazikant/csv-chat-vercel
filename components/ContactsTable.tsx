@@ -3,9 +3,10 @@
 import { useState } from "react";
 import { ContactRow } from "@/lib/langgraph/state";
 
-// Column ordering follows the spec:
-//  Name | Company | Designation | Email | Phone | Last Mailer Subject |
-//  Last Activity | Total Opens | Engagement | Action (View Journey)
+// All columns shown in the table.
+// Per spec v2:
+//   Name | Company | Designation | Email | Phone | Mailer | Opens | Clicks |
+//   Unsub | Opt-in | Last Activity | Engagement
 const ALL_COLUMNS: { key: keyof ContactRow; label: string }[] = [
   { key: "name",              label: "Name" },
   { key: "company",           label: "Company" },
@@ -14,25 +15,26 @@ const ALL_COLUMNS: { key: keyof ContactRow; label: string }[] = [
   { key: "phone",             label: "Phone" },
   { key: "city",              label: "City" },
   { key: "sector",            label: "Sector" },
-  { key: "customer_type",     label: "Customer Type" },
+  { key: "mailer_id",         label: "Mailer" },
+  { key: "opens",             label: "Opens" },
+  { key: "clicks",            label: "Clicks" },
+  { key: "unsubscribed",      label: "Unsub" },
   { key: "optin_status",      label: "Opt-in" },
   { key: "last_activity_date",label: "Last Activity" },
-  { key: "total_sent",        label: "Total Sent" },
-  { key: "total_opens",       label: "Total Opens" },
-  { key: "total_clicks",      label: "Total Clicks" },
   { key: "engagement_score",  label: "Engagement" },
 ];
 
 const VISIBLE_COLUMNS: (keyof ContactRow)[] = [
   "name", "company", "designation", "email", "phone",
-  "last_activity_date", "total_opens", "engagement_score",
+  "mailer_id", "opens", "clicks", "unsubscribed",
+  "optin_status", "last_activity_date", "engagement_score",
 ];
 
 const PAGE_SIZE = 25;
 
 const SEARCHABLE_COLUMNS: (keyof ContactRow)[] = [
   "name", "company", "designation", "email", "phone",
-  "city", "sector", "customer_type", "optin_status", "engagement_score",
+  "city", "sector", "optin_status", "engagement_score", "mailer_id",
 ];
 
 interface Props {
@@ -57,7 +59,7 @@ export default function ContactsTable({
     ? rows.filter((row) =>
         SEARCHABLE_COLUMNS.some((col) => {
           const val = row[col];
-          if (val === null || val === undefined) return false;
+          if (val === null || val === undefined || val === false) return false;
           return String(val).toLowerCase().includes(searchTerm.toLowerCase());
         })
       )
@@ -116,7 +118,7 @@ export default function ContactsTable({
     const rows_data = filteredRows.map((row) =>
       ALL_COLUMNS.map((c) => {
         const val = row[c.key];
-        if (val === null || val === undefined) return "";
+        if (val === null || val === undefined || val === false) return "";
         if (typeof val === "string" && val.includes(",")) return `"${val}"`;
         return String(val);
       })
@@ -134,6 +136,7 @@ export default function ContactsTable({
   function formatValue(row: ContactRow, key: keyof ContactRow): string {
     const val = row[key];
     if (val === null || val === undefined) return "—";
+    if (key === "unsubscribed") return val ? "Yes" : "No";
     if (key === "last_activity_date") {
       try {
         const d = new Date(String(val));
@@ -160,13 +163,16 @@ export default function ContactsTable({
     }
     if (key === "optin_status") {
       const s = String(val);
-      if (s === "Subscribed")   return "text-green-600";
+      if (s === "Subscribed")    return "text-green-600";
       if (s === "Unsubscribed") return "text-red-500";
-      if (s === "Bounced")      return "text-orange-600";
-      if (s === "Unknown")      return "text-gray-400";
+      if (s === "Hard Bounced") return "text-orange-600";
     }
-    if (key === "total_opens" || key === "total_clicks" || key === "total_sent") {
-      return "text-right font-mono text-gray-700";
+    if (key === "unsubscribed") return val ? "text-red-500 font-medium" : "text-gray-400";
+    if (key === "mailer_id") return val ? "text-gray-600 font-mono text-xs" : "text-gray-300";
+    if (key === "opens" || key === "clicks") {
+      const n = Number(val);
+      if (n > 0) return "text-right font-mono text-gray-700";
+      return "text-right font-mono text-gray-300";
     }
     return "text-gray-700";
   }
@@ -249,16 +255,18 @@ export default function ContactsTable({
         </div>
       </div>
 
+      {/* Horizontal-scroll wrapper: min-w-max forces the table to use its
+          natural width so wide column sets scroll instead of being clipped. */}
       <div className="flex-1 overflow-auto">
         {filteredRows.length === 0 ? (
           <div className="flex items-center justify-center h-full text-sm text-gray-400">
             {searchTerm ? "No records match your search." : "No contacts yet. Click 'Add Contact' or 'Upload CSV' to get started."}
           </div>
         ) : (
-          <table className="w-full text-sm border-collapse">
+          <table className="min-w-max text-sm border-collapse">
             <thead className="sticky top-0 bg-gray-50 z-20">
               <tr>
-                <th className="w-10 px-3 py-2.5 border-b border-gray-200">
+                <th className="w-10 px-3 py-2.5 border-b border-gray-200 sticky left-0 bg-gray-50 z-30">
                   <input
                     type="checkbox"
                     checked={allSelected}
@@ -286,7 +294,7 @@ export default function ContactsTable({
                     i % 2 === 0 ? "bg-white" : "bg-gray-50/30"
                   } ${selected.has(row.email) ? "bg-orange-50" : ""}`}
                 >
-                  <td className="px-3 py-2">
+                  <td className="px-3 py-2 sticky left-0 bg-inherit z-10">
                     <input
                       type="checkbox"
                       checked={selected.has(row.email)}

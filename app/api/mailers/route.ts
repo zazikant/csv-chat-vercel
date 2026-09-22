@@ -1,7 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const { searchParams } = new URL(req.url);
+  const valuesOnly = searchParams.get("values") === "1";
+
+  if (valuesOnly) {
+    // Lightweight endpoint used by the contact form's mailer_id autocomplete.
+    // Returns just [{ mailer_id, subject_line }] sorted by mailer_id.
+    const { data, error } = await supabase
+      .from("mailers")
+      .select("mailer_id,subject_line")
+      .order("mailer_id", { ascending: true });
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+    return NextResponse.json(data ?? []);
+  }
+
+  // Full mailer records (used by MailersTable)
   const { data, error } = await supabase
     .from("mailers")
     .select("*")
@@ -10,7 +28,7 @@ export async function GET() {
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
-  return NextResponse.json(data);
+  return NextResponse.json(data ?? []);
 }
 
 export async function POST(req: NextRequest) {
@@ -25,9 +43,9 @@ export async function POST(req: NextRequest) {
 
   // Strip auto-maintained / generated fields
   for (const f of [
-    "total_sent","delivered","unique_opens","total_opens","unique_clicks",
-    "total_clicks","bounced","unsubscribed","open_rate","click_rate",
-    "created_at","updated_at",
+    "total_sent","unique_opens","total_opens","unique_clicks",
+    "total_clicks","unsubscribed_count","open_rate","click_rate",
+    "unsubscribe_rate","created_at","updated_at",
   ]) {
     delete body[f];
   }
@@ -54,9 +72,9 @@ export async function PUT(req: NextRequest) {
 
   // Strip auto-maintained / generated fields
   for (const f of [
-    "total_sent","delivered","unique_opens","total_opens","unique_clicks",
-    "total_clicks","bounced","unsubscribed","open_rate","click_rate",
-    "created_at","updated_at",
+    "total_sent","unique_opens","total_opens","unique_clicks",
+    "total_clicks","unsubscribed_count","open_rate","click_rate",
+    "unsubscribe_rate","created_at","updated_at",
   ]) {
     delete fields[f];
   }

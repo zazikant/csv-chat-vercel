@@ -15,26 +15,30 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Maximum 500 rows per upload" }, { status: 400 });
   }
 
-  // Validate: every row must have an email (PK)
-  const missingEmail = rows.findIndex((r: Record<string, unknown>) => !r?.email);
-  if (missingEmail !== -1) {
-    return NextResponse.json(
-      { error: `Row ${missingEmail + 1} is missing required field: email` },
-      { status: 400 }
-    );
-  }
-
-  // Strip auto-managed / generated fields before insert
-  const cleaned = rows.map((r: Record<string, unknown>) => {
-    const copy = { ...r };
+  // Validate + clean each row
+  const cleaned: Record<string, unknown>[] = [];
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i] as Record<string, unknown>;
+    if (!r?.email) {
+      return NextResponse.json(
+        { error: `Row ${i + 1} is missing required field: email` },
+        { status: 400 }
+      );
+    }
+    const copy: Record<string, unknown> = { ...r };
     for (const f of [
-      "total_sent","total_opens","total_clicks","last_activity_date",
-      "engagement_score","created_at","updated_at","legacy_id","legacy_remarks",
+      "last_activity_date","engagement_score","created_at","updated_at",
     ]) {
       delete copy[f];
     }
-    return copy;
-  });
+    if (copy.opens == null || copy.opens === "") copy.opens = 0;
+    if (copy.clicks == null || copy.clicks === "") copy.clicks = 0;
+    copy.opens  = Number(copy.opens)  || 0;
+    copy.clicks = Number(copy.clicks) || 0;
+    if (copy.unsubscribed == null) copy.unsubscribed = false;
+    copy.unsubscribed = Boolean(copy.unsubscribed);
+    cleaned.push(copy);
+  }
 
   const { data, error } = await supabase
     .from("contacts")

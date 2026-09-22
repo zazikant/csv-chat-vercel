@@ -10,9 +10,6 @@ interface Props {
   onSave: () => void;
 }
 
-const CUSTOMER_TYPES = ["Existing", "New"];
-const OPTIN_STATUSES = ["Subscribed", "Unsubscribed", "Bounced", "Unknown"];
-
 export default function MailerEditModal({ record, mode, onClose, onSave }: Props) {
   const [form, setForm]   = useState<Partial<MailerRow>>({});
   const [saving, setSaving] = useState(false);
@@ -36,7 +33,6 @@ export default function MailerEditModal({ record, mode, onClose, onSave }: Props
     setForm((prev) => ({ ...prev, [key]: value ?? null }));
   }
 
-  // Convert ISO datetime to the format expected by <input type="datetime-local">
   function isoToLocalInput(iso: string | null | undefined): string {
     if (!iso) return "";
     try {
@@ -77,14 +73,14 @@ export default function MailerEditModal({ record, mode, onClose, onSave }: Props
       const payload: Record<string, unknown> = { ...form };
       // Strip auto-maintained / generated fields
       for (const f of [
-        "total_sent","delivered","unique_opens","total_opens","unique_clicks",
-        "total_clicks","bounced","unsubscribed","open_rate","click_rate",
-        "created_at","updated_at",
+        "total_sent","unique_opens","total_opens","unique_clicks",
+        "total_clicks","unsubscribed_count","open_rate","click_rate",
+        "unsubscribe_rate","created_at","updated_at",
       ]) {
         delete payload[f];
       }
       if (mode === "edit") {
-        payload.mailer_id = record!.mailer_id; // PK immutable on update
+        payload.mailer_id = record!.mailer_id;
       }
       const res = await fetch(url, {
         method,
@@ -105,7 +101,7 @@ export default function MailerEditModal({ record, mode, onClose, onSave }: Props
   }
 
   async function handleDelete() {
-    if (!confirm("Delete this mailer? This will also delete its email_journey rows. This cannot be undone.")) return;
+    if (!confirm("Delete this mailer? Contacts assigned to it will have their mailer_id cleared (not deleted). This cannot be undone.")) return;
     setDeleting(true);
     setError("");
     try {
@@ -189,23 +185,22 @@ export default function MailerEditModal({ record, mode, onClose, onSave }: Props
 
           {mode === "edit" && (
             <div className="px-4 py-3 bg-blue-50 border border-blue-100 rounded-lg text-xs text-blue-700">
-              <strong>Performance metrics</strong> (auto-maintained by triggers on email_journey inserts):
-              <div className="grid grid-cols-4 gap-2 mt-2">
-                <div><span className="text-gray-500">Sent:</span>        {record?.total_sent ?? 0}</div>
-                <div><span className="text-gray-500">Delivered:</span>   {record?.delivered ?? 0}</div>
-                <div><span className="text-gray-500">Unique Opens:</span>{record?.unique_opens ?? 0}</div>
-                <div><span className="text-gray-500">Total Opens:</span> {record?.total_opens ?? 0}</div>
-                <div><span className="text-gray-500">Unique Clicks:</span>{record?.unique_clicks ?? 0}</div>
-                <div><span className="text-gray-500">Total Clicks:</span>{record?.total_clicks ?? 0}</div>
-                <div><span className="text-gray-500">Bounced:</span>     {record?.bounced ?? 0}</div>
-                <div><span className="text-gray-500">Unsubscribed:</span>{record?.unsubscribed ?? 0}</div>
+              <strong>Performance metrics</strong> (auto-aggregated from the Contacts tab — every contact whose <code>mailer_id</code> matches this mailer contributes to these counters):
+              <div className="grid grid-cols-3 gap-2 mt-2">
+                <div><span className="text-gray-500">Contacts (sent):</span> <strong>{record?.total_sent ?? 0}</strong></div>
+                <div><span className="text-gray-500">Unique Opens:</span> <strong>{record?.unique_opens ?? 0}</strong></div>
+                <div><span className="text-gray-500">Total Opens:</span> <strong>{record?.total_opens ?? 0}</strong></div>
+                <div><span className="text-gray-500">Unique Clicks:</span> <strong>{record?.unique_clicks ?? 0}</strong></div>
+                <div><span className="text-gray-500">Total Clicks:</span> <strong>{record?.total_clicks ?? 0}</strong></div>
+                <div><span className="text-gray-500">Unsubscribed:</span> <strong>{record?.unsubscribed_count ?? 0}</strong></div>
               </div>
-              <div className="grid grid-cols-2 gap-2 mt-2">
-                <div><span className="text-gray-500">Open Rate:</span>  <strong>{record?.open_rate != null ? `${Number(record.open_rate).toFixed(2)}%` : "—"}</strong></div>
+              <div className="grid grid-cols-3 gap-2 mt-2 pt-2 border-t border-blue-100">
+                <div><span className="text-gray-500">Open Rate:</span> <strong>{record?.open_rate != null ? `${Number(record.open_rate).toFixed(2)}%` : "—"}</strong></div>
                 <div><span className="text-gray-500">Click Rate:</span> <strong>{record?.click_rate != null ? `${Number(record.click_rate).toFixed(2)}%` : "—"}</strong></div>
+                <div><span className="text-gray-500">Unsub Rate:</span> <strong>{record?.unsubscribe_rate != null ? `${Number(record.unsubscribe_rate).toFixed(2)}%` : "—"}</strong></div>
               </div>
               <div className="mt-2 text-gray-500">
-                To record an event (SENT, OPENED, CLICKED, BOUNCED, UNSUBSCRIBED), insert a row into the <code>email_journey</code> table - counters here will update automatically.
+                These numbers update automatically whenever you add, edit, or delete a contact in the Contacts tab.
               </div>
             </div>
           )}

@@ -1,9 +1,5 @@
 // =============================================================================
-//  Email Campaign Tracker - data types
-//  Mirrors the new 3-table schema:
-//    contacts       - master contact list (PK: email)
-//    mailers        - campaign library    (PK: mailer_id)
-//    email_journey  - event log           (PK: id)
+//  Email Campaign Tracker - data types (Schema v2: manual per-contact counters)
 // =============================================================================
 
 import { Annotation } from "@langchain/langgraph";
@@ -14,6 +10,10 @@ export interface Message {
 }
 
 // ---- contacts -------------------------------------------------------------
+// One row per person. Each contact is assigned to AT MOST ONE mailer at a time
+// (mailer_id). opens/clicks/unsubscribed are manually entered per (contact,
+// mailer). When you change a contact's mailer_id, you should reset their
+// opens/clicks/unsubscribed to 0/false.
 export interface ContactRow {
   email: string;
   name: string | null;
@@ -22,51 +22,36 @@ export interface ContactRow {
   phone: string | null;
   city: string | null;
   sector: string | null;
-  customer_type: string | null;     // Existing / New
-  optin_status: string | null;      // Subscribed / Unsubscribed / Bounced / Unknown
-  total_sent: number;
-  total_opens: number;
-  total_clicks: number;
+  optin_status: string | null;      // Subscribed / Hard Bounced / Unsubscribed
+  mailer_id: string | null;         // FK to mailers.mailer_id (nullable)
+  opens: number;                    // manually entered per (contact, mailer)
+  clicks: number;                   // manually entered per (contact, mailer)
+  unsubscribed: boolean;            // manually toggled per (contact, mailer)
   last_activity_date: string | null;
-  engagement_score: string | null;  // HOT / WARM / COLD
+  engagement_score: string | null;  // HOT / WARM / COLD (auto)
 }
 
 // ---- mailers ---------------------------------------------------------------
+// All counters below are AUTO-MAINTAINED by a trigger on `contacts` —
+// every INSERT/UPDATE/DELETE on contacts recomputes the affected mailer's
+// counters from scratch. Never write to these columns directly.
+// open_rate / click_rate / unsubscribe_rate are GENERATED ALWAYS columns.
 export interface MailerRow {
-  mailer_id: string;          // e.g. M001
+  mailer_id: string;            // e.g. M001
   subject_line: string;
   template_name: string | null;
   sent_date: string | null;
-  total_sent: number;
-  delivered: number;
-  unique_opens: number;
-  total_opens: number;
-  unique_clicks: number;
-  total_clicks: number;
-  bounced: number;
-  unsubscribed: number;
-  open_rate: number | null;   // computed % (0-100)
-  click_rate: number | null;  // computed % (0-100)
-}
-
-// ---- email_journey ---------------------------------------------------------
-export type JourneyEventType =
-  | "SENT"
-  | "DELIVERED"
-  | "OPENED"
-  | "CLICKED"
-  | "BOUNCED"
-  | "UNSUBSCRIBED";
-
-export interface JourneyRow {
-  id: number;
-  email: string;
-  mailer_id: string;
-  subject_line: string | null;
-  event_type: JourneyEventType;
-  timestamp: string;
-  link_clicked: string | null;
-  device_info: string | null;
+  // auto-maintained:
+  total_sent: number;           // count of contacts with this mailer_id
+  unique_opens: number;        // count of contacts with this mailer_id AND opens>0
+  total_opens: number;         // sum of opens
+  unique_clicks: number;       // count of contacts with this mailer_id AND clicks>0
+  total_clicks: number;        // sum of clicks
+  unsubscribed_count: number;  // count of contacts with this mailer_id AND unsubscribed=true
+  // generated:
+  open_rate: number | null;         // unique_opens  / total_sent * 100
+  click_rate: number | null;        // unique_clicks / total_sent * 100
+  unsubscribe_rate: number | null;  // unsubscribed_count / total_sent * 100
 }
 
 // ---- LLM provider (NVIDIA only — see lib/nvidia.ts) -------------------

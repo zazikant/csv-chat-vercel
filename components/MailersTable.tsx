@@ -4,26 +4,25 @@ import { useState } from "react";
 import { MailerRow } from "@/lib/langgraph/state";
 
 const ALL_COLUMNS: { key: keyof MailerRow; label: string }[] = [
-  { key: "mailer_id",      label: "Mailer ID" },
-  { key: "subject_line",   label: "Subject Line" },
-  { key: "template_name", label: "Template" },
-  { key: "sent_date",     label: "Sent Date" },
-  { key: "total_sent",    label: "Sent" },
-  { key: "delivered",     label: "Delivered" },
-  { key: "unique_opens",  label: "Unique Opens" },
-  { key: "total_opens",   label: "Total Opens" },
-  { key: "unique_clicks", label: "Unique Clicks" },
-  { key: "total_clicks",  label: "Total Clicks" },
-  { key: "bounced",       label: "Bounced" },
-  { key: "unsubscribed",  label: "Unsubscribed" },
-  { key: "open_rate",     label: "Open Rate" },
-  { key: "click_rate",    label: "Click Rate" },
+  { key: "mailer_id",          label: "Mailer ID" },
+  { key: "subject_line",       label: "Subject Line" },
+  { key: "template_name",     label: "Template" },
+  { key: "sent_date",         label: "Sent Date" },
+  { key: "total_sent",        label: "Sent" },
+  { key: "unique_opens",      label: "Unique Opens" },
+  { key: "total_opens",       label: "Total Opens" },
+  { key: "unique_clicks",     label: "Unique Clicks" },
+  { key: "total_clicks",      label: "Total Clicks" },
+  { key: "unsubscribed_count",label: "Unsubscribed" },
+  { key: "open_rate",         label: "Open Rate" },
+  { key: "click_rate",        label: "Click Rate" },
+  { key: "unsubscribe_rate",  label: "Unsub Rate" },
 ];
 
 const VISIBLE_COLUMNS: (keyof MailerRow)[] = [
   "mailer_id", "subject_line", "sent_date",
-  "total_sent", "unique_opens", "unique_clicks",
-  "open_rate", "click_rate",
+  "total_sent", "unique_opens", "unique_clicks", "unsubscribed_count",
+  "open_rate", "click_rate", "unsubscribe_rate",
 ];
 
 const PAGE_SIZE = 25;
@@ -104,7 +103,7 @@ export default function MailersTable({
 
   function handleBulkDelete() {
     if (selected.size === 0) return;
-    if (!confirm(`Delete ${selected.size} selected mailer${selected.size > 1 ? "s" : ""}? This will also delete their email_journey rows. This cannot be undone.`)) return;
+    if (!confirm(`Delete ${selected.size} selected mailer${selected.size > 1 ? "s" : ""}? This will also unset mailer_id on any contacts assigned to them. This cannot be undone.`)) return;
     onDeleteRows(Array.from(selected));
     setSelected(new Set());
   }
@@ -154,7 +153,7 @@ export default function MailersTable({
         return String(val);
       }
     }
-    if (key === "open_rate" || key === "click_rate") {
+    if (key === "open_rate" || key === "click_rate" || key === "unsubscribe_rate") {
       const n = Number(val);
       if (isNaN(n)) return String(val);
       return `${n.toFixed(2)}%`;
@@ -173,11 +172,20 @@ export default function MailersTable({
         return "text-gray-400";
       }
     }
+    if (key === "unsubscribe_rate") {
+      const n = Number(val);
+      if (!isNaN(n)) {
+        if (n >= 5)  return "text-red-600 font-medium";
+        if (n >= 1)  return "text-orange-500";
+        return "text-gray-400";
+      }
+    }
+    if (key === "unsubscribed_count") {
+      const n = Number(val);
+      return n > 0 ? "text-red-500 font-medium" : "text-gray-400";
+    }
     if (key === "subject_line") return "text-gray-800";
     if (key === "mailer_id")    return "text-gray-500 font-mono";
-    if (key === "bounced" || key === "unsubscribed") {
-      return Number(val) > 0 ? "text-red-500" : "text-gray-400";
-    }
     if (typeof val === "number") return "text-right font-mono text-gray-700";
     return "text-gray-700";
   }
@@ -246,16 +254,17 @@ export default function MailersTable({
         </div>
       </div>
 
+      {/* Horizontal-scroll wrapper */}
       <div className="flex-1 overflow-auto">
         {filteredRows.length === 0 ? (
           <div className="flex items-center justify-center h-full text-sm text-gray-400">
             {searchTerm ? "No mailers match your search." : "No mailers yet. Click 'Add Mailer' to create your first campaign."}
           </div>
         ) : (
-          <table className="w-full text-sm border-collapse">
+          <table className="min-w-max text-sm border-collapse">
             <thead className="sticky top-0 bg-gray-50 z-20">
               <tr>
-                <th className="w-10 px-3 py-2.5 border-b border-gray-200">
+                <th className="w-10 px-3 py-2.5 border-b border-gray-200 sticky left-0 bg-gray-50 z-30">
                   <input
                     type="checkbox"
                     checked={allSelected}
@@ -289,7 +298,7 @@ export default function MailersTable({
                     i % 2 === 0 ? "bg-white" : "bg-gray-50/30"
                   } ${selected.has(row.mailer_id) ? "bg-orange-50" : ""}`}
                 >
-                  <td className="px-3 py-2">
+                  <td className="px-3 py-2 sticky left-0 bg-inherit z-10">
                     <input
                       type="checkbox"
                       checked={selected.has(row.mailer_id)}
