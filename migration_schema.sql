@@ -236,9 +236,12 @@ begin
     v_old_mailer := case when tg_op = 'DELETE' or tg_op = 'UPDATE' then old.mailer_id else null end;
     v_new_mailer := case when tg_op = 'INSERT' or tg_op = 'UPDATE' then new.mailer_id else null end;
 
-    if v_old_mailer is not null and v_old_mailer <> v_new_mailer then
+    -- Recompute OLD mailer if it exists AND (new is null [DELETE] OR different [UPDATE with mailer change])
+    -- NOTE: must check v_new_mailer IS NULL explicitly because 'M001' <> NULL evaluates to NULL (falsy)
+    if v_old_mailer is not null and (v_new_mailer is null or v_old_mailer <> v_new_mailer) then
         perform public.recompute_mailer_counters(v_old_mailer);
     end if;
+    -- Recompute NEW mailer if it exists (INSERT or UPDATE)
     if v_new_mailer is not null then
         perform public.recompute_mailer_counters(v_new_mailer);
     end if;
