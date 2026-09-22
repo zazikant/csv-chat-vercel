@@ -108,7 +108,8 @@ create index if not exists mailers_open_rate_idx    on public.mailers (open_rate
 -- 3. contacts  (master contact list)
 -- ---------------------------------------------------------------------
 create table public.contacts (
-    email              text        primary key,
+    id                 bigserial   primary key,
+    email              text        not null,
     name               text,
     company            text,
     designation        text,
@@ -123,11 +124,16 @@ create table public.contacts (
     last_activity_date timestamptz,
     engagement_score   text        default 'COLD',
     created_at         timestamptz default now(),
-    updated_at         timestamptz default now()
+    updated_at         timestamptz default now(),
+    -- One row per (email, mailer_id) combination. Allows the same email to
+    -- appear multiple times (one per mailer), but prevents exact duplicates.
+    constraint contacts_email_mailer_unique unique (email, mailer_id)
 );
 
+comment on column public.contacts.id is 'Auto-incrementing primary key. Email is no longer the PK — multiple rows per email are allowed (one per mailer).';
 comment on column public.contacts.tags is 'Free-form tags (text array) for categorizing contacts. e.g. {vip, mumbai, contractor}';
 
+create index if not exists contacts_email_idx         on public.contacts (email);
 create index if not exists contacts_company_idx       on public.contacts (company);
 create index if not exists contacts_name_idx         on public.contacts (name);
 create index if not exists contacts_mailer_id_idx     on public.contacts (mailer_id);

@@ -137,12 +137,12 @@ export default function EditModal({ record, mode, onClose, onSave }: Props) {
       const method = mode === "edit" ? "PUT" : "POST";
       const payload: Record<string, unknown> = { ...form };
       for (const f of [
-        "last_activity_date","engagement_score","created_at","updated_at",
+        "id","last_activity_date","engagement_score","created_at","updated_at",
       ]) {
         delete payload[f];
       }
       if (mode === "edit") {
-        payload.email = record!.email;
+        payload.id = record!.id;  // use id for updates (email is no longer the PK)
       }
       // Normalize mailer_id: if empty/null, OMIT the field entirely so the
       // server merge logic can distinguish "user didn't fill this" (preserve
@@ -179,7 +179,7 @@ export default function EditModal({ record, mode, onClose, onSave }: Props) {
       const res = await fetch("/api/contacts", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: record!.email }),
+        body: JSON.stringify({ id: record!.id }),
       });
       if (!res.ok) throw new Error("Delete failed");
       onSave();

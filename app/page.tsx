@@ -53,11 +53,11 @@ export default function HomePage() {
   const [showBulkDelete, setShowBulkDelete] = useState(false);
 
   // ---------- Contacts handlers ----------
-  async function handleDeleteRows(emails: string[]) {
+  async function handleDeleteRows(ids: string[]) {
     await fetch("/api/contacts", {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ emails }),
+      body: JSON.stringify({ ids }),
     });
     reloadContacts();
   }
@@ -132,26 +132,31 @@ export default function HomePage() {
   }
 
   /**
-   * Bulk-delete contacts by email. Fetches existing emails first so we can
-   * report how many were actually deleted vs how many weren't found (already
-   * deleted previously). Used by the BulkDeleteModal on the Contacts tab.
+   * Bulk-delete contacts by email. Since multiple rows per email are now allowed,
+   * deleting by email removes ALL rows with that email (across all mailers).
    */
   async function handleBulkDeleteContacts(emails: string[]): Promise<{ deleted: number; notFound: string[] }> {
-    // Fetch existing contacts to determine which emails actually exist
     const uniqueEmails = Array.from(new Set(emails));
     const res = await fetch("/api/contacts");
     const allContacts: ContactRow[] = res.ok ? await res.json() : [];
-    const existingEmails = new Set(allContacts.map((c) => c.email));
-    const toDelete = uniqueEmails.filter((e) => existingEmails.has(e));
-    const notFound = uniqueEmails.filter((e) => !existingEmails.has(e));
+    const existingEmails = new Set(allContacts.map((c) => c.email.toLowerCase()));
+    const toDelete = uniqueEmails.filter((e) => existingEmails.has(e.toLowerCase()));
+    const notFound = uniqueEmails.filter((e) => !existingEmails.has(e.toLowerCase()));
 
     if (toDelete.length > 0) {
-      await fetch("/api/contacts", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ emails: toDelete }),
-      });
-      reloadContacts();
+      // Fetch all rows (ids) with those emails, then delete by id
+      const { data: rowsToDelete } = await fetch(`/api/contacts`).then((r) => r.json()).then((rows: ContactRow[]) => ({
+        data: rows.filter((r: ContactRow) => toDelete.includes(r.email.toLowerCase())).map((r: ContactRow) => r.id),
+      }));
+      const ids = (rowsToDelete ?? []) as number[];
+      if (ids.length > 0) {
+        await fetch("/api/contacts", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ids }),
+        });
+        reloadContacts();
+      }
     }
     return { deleted: toDelete.length, notFound };
   }

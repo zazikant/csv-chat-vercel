@@ -47,7 +47,7 @@ interface Props {
   onAdd: () => void;
   onUpload: () => void;
   onBulkDelete: () => void;
-  onDeleteRows: (emails: string[]) => void;
+  onDeleteRows: (ids: string[]) => void;
 }
 
 interface Filters {
@@ -66,7 +66,7 @@ const EMPTY_FILTERS: Filters = {
 export default function ContactsTable({
   rows, isFiltered, page, onPageChange, onReset, onEdit, onAdd, onUpload, onBulkDelete, onDeleteRows,
 }: Props) {
-  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [selected, setSelected] = useState<Set<number>>(new Set());
   const [searchTerm, setSearchTerm] = useState("");
   const [filters, setFilters] = useState<Filters>({ ...EMPTY_FILTERS });
   const [showFilters, setShowFilters] = useState(false);
@@ -113,7 +113,7 @@ export default function ContactsTable({
   const totalPages = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
   const paginated  = filteredRows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const visibleCols = ALL_COLUMNS.filter((c) => VISIBLE_COLUMNS.includes(c.key));
-  const allOnPage = paginated.map((r) => r.email);
+  const allOnPage = paginated.map((r) => r.id);
   const allSelected = allOnPage.length > 0 && allOnPage.every((e) => selected.has(e));
   const someSelected = allOnPage.some((e) => selected.has(e));
 
@@ -129,11 +129,11 @@ export default function ContactsTable({
     });
   }
 
-  function toggleRow(email: string) {
+  function toggleRow(id: number) {
     setSelected((prev) => {
       const next = new Set(prev);
-      if (next.has(email)) next.delete(email);
-      else next.add(email);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
   }
@@ -141,7 +141,7 @@ export default function ContactsTable({
   function handleBulkDelete() {
     if (selected.size === 0) return;
     if (!confirm(`Delete ${selected.size} selected record${selected.size > 1 ? "s" : ""}? This cannot be undone.`)) return;
-    onDeleteRows(Array.from(selected));
+    onDeleteRows(Array.from(selected).map(String));
     setSelected(new Set());
   }
 
@@ -152,7 +152,7 @@ export default function ContactsTable({
       ? `Delete ALL ${filteredRows.length} records? This cannot be undone.`
       : `Delete ${filteredRows.length} visible record${filteredRows.length > 1 ? "s" : ""}? This cannot be undone.`;
     if (!confirm(msg)) return;
-    onDeleteRows(filteredRows.map((r) => r.email));
+    onDeleteRows(filteredRows.map((r) => String(r.id)));
     setSelected(new Set());
     setSearchTerm("");
   }
@@ -445,17 +445,17 @@ export default function ContactsTable({
             <tbody>
               {paginated.map((row, i) => (
                 <tr
-                  key={row.email}
+                  key={`${row.id}-${row.email}`}
                   onDoubleClick={() => onEdit(row)}
                   className={`border-b border-gray-100 hover:bg-blue-50 cursor-pointer transition-colors group ${
                     i % 2 === 0 ? "bg-white" : "bg-gray-50/30"
-                  } ${selected.has(row.email) ? "bg-orange-50" : ""}`}
+                  } ${selected.has(row.id) ? "bg-orange-50" : ""}`}
                 >
                   <td className="px-3 py-2 sticky left-0 bg-inherit z-10">
                     <input
                       type="checkbox"
-                      checked={selected.has(row.email)}
-                      onChange={() => toggleRow(row.email)}
+                      checked={selected.has(row.id)}
+                      onChange={() => toggleRow(row.id)}
                       onClick={(e) => e.stopPropagation()}
                       className="w-4 h-4 rounded border-gray-300 text-blue-600 cursor-pointer"
                     />

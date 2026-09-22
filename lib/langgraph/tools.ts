@@ -19,9 +19,11 @@ You are querying an "Email Campaign Tracker" database with TWO tables.
 The app does NOT send emails automatically — it tracks them manually.
 
 ═══════════════════════════════════════════════════════════════════════
-TABLE 1: contacts  (master contact list — one row per person)
+TABLE 1: contacts  (master contact list — MULTIPLE ROWS PER EMAIL ALLOWED)
 ═══════════════════════════════════════════════════════════════════════
-Primary key: email (text, lowercase, required for every row)
+Primary key: id (bigserial, auto-incrementing)
+Email is NOT unique — the same email can appear multiple times (one row per mailer).
+Unique constraint: (email, mailer_id) — prevents exact duplicates.
 
 User-editable columns (these are what the user types in the form):
   - email              text        REQUIRED. PK. e.g. "rajesh@contractor.com"

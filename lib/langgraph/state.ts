@@ -15,6 +15,7 @@ export interface Message {
 // The optin_status dropdown covers unsubscribed/bounced state.
 // If a contact is unsubscribed, set optin_status = 'Unsubscribed'.
 export interface ContactRow {
+  id: number;
   email: string;
   name: string | null;
   company: string | null;
