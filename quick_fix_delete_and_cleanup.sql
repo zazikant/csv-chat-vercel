@@ -15,6 +15,8 @@ create or replace function public.contacts_before_trigger()
 returns trigger
 language plpgsql
 as $$
+declare
+    cleaned_tags text[];
 begin
     -- For DELETE: return OLD so the delete proceeds. Returning NULL cancels it!
     if tg_op = 'DELETE' then
@@ -34,13 +36,19 @@ begin
         end;
         new.updated_at := now();
         -- Normalize tags: lowercase + dedupe + sort
+        -- NOTE: subquery approach to avoid array_agg(DISTINCT ... ORDER BY ...)
+        -- which the Supabase SQL Editor parser misinterprets.
         if new.tags is null then
             new.tags := '{}';
         elsif array_length(new.tags, 1) > 0 then
-            select coalesce(array_agg(distinct lower(trim(t))) order by lower(trim(t)), '{}')
-            into new.tags
-            from unnest(new.tags) as t
-            where trim(t) <> '';
+            select array_agg(tag order by tag)
+            into cleaned_tags
+            from (
+                select distinct lower(trim(t)) as tag
+                from unnest(new.tags) as t
+                where trim(t) <> ''
+            ) as s;
+            new.tags := coalesce(cleaned_tags, '{}');
         else
             new.tags := '{}';
         end if;

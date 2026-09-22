@@ -167,6 +167,8 @@ create or replace function public.contacts_before_trigger()
 returns trigger
 language plpgsql
 as $$
+declare
+    cleaned_tags text[];
 begin
     -- Only set auto-maintained fields on INSERT/UPDATE.
     -- For DELETE, do nothing here — the AFTER trigger handles recompute.
@@ -190,13 +192,19 @@ begin
         -- Normalize tags: trim + lowercase + dedupe + SORT
         -- Sorting ensures {vip, mumbai} and {mumbai, vip} are stored identically,
         -- so re-ordering tags in a CSV upload doesn't trigger a spurious "update".
+        -- NOTE: We use a subquery to avoid array_agg(DISTINCT ... ORDER BY ...) which
+        -- the Supabase SQL Editor parser misinterprets (treats ORDER BY as outer).
         if new.tags is null then
             new.tags := '{}';
         elsif array_length(new.tags, 1) > 0 then
-            select coalesce(array_agg(distinct lower(trim(t))) order by lower(trim(t)), '{}')
-            into new.tags
-            from unnest(new.tags) as t
-            where trim(t) <> '';
+            select array_agg(tag order by tag)
+            into cleaned_tags
+            from (
+                select distinct lower(trim(t)) as tag
+                from unnest(new.tags) as t
+                where trim(t) <> ''
+            ) as s;
+            new.tags := coalesce(cleaned_tags, '{}');
         else
             new.tags := '{}';
         end if;
