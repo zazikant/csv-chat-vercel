@@ -13,6 +13,44 @@ export async function GET() {
   return NextResponse.json(data);
 }
 
+/**
+ * If the payload references a mailer_id that doesn't exist yet, lazily create
+ * a stub mailer so the contact FK is satisfied. The user can fill in
+ * subject_line / sent_date later in the Mailers tab.
+ *
+ * This avoids the "violates foreign key constraint contacts_mailer_id_fkey"
+ * error when a user types a new mailer_id directly in the contact form
+ * without first going to the Mailers tab.
+ */
+async function ensureMailerExists(mailerId: string): Promise<{ ok: boolean; error?: string }> {
+  if (!mailerId) return { ok: true };
+  const trimmed = mailerId.trim();
+  if (!trimmed) return { ok: true };
+
+  // Check if it already exists
+  const { data: existing, error: selErr } = await supabase
+    .from("mailers")
+    .select("mailer_id")
+    .eq("mailer_id", trimmed)
+    .maybeSingle();
+
+  if (selErr) return { ok: false, error: selErr.message };
+  if (existing) return { ok: true };
+
+  // Lazily create a stub mailer with subject_line = mailer_id (placeholder)
+  const { error: insErr } = await supabase
+    .from("mailers")
+    .insert({
+      mailer_id: trimmed,
+      subject_line: `(auto-created from contact form — edit in Mailers tab)`,
+      template_name: null,
+      sent_date: null,
+    });
+
+  if (insErr) return { ok: false, error: insErr.message };
+  return { ok: true };
+}
+
 export async function POST(req: NextRequest) {
   const body = await req.json();
 
@@ -24,6 +62,8 @@ export async function POST(req: NextRequest) {
   // Strip auto-maintained fields - they are managed by the trigger
   for (const f of [
     "last_activity_date","engagement_score","created_at","updated_at",
+    // v2 removed these but strip anyway in case caller sends them
+    "total_sent","total_opens","total_clicks","unsubscribed_count",
   ]) {
     delete body[f];
   }
@@ -33,8 +73,18 @@ export async function POST(req: NextRequest) {
   if (body.clicks == null || body.clicks === "") body.clicks = 0;
   body.opens  = Number(body.opens)  || 0;
   body.clicks = Number(body.clicks) || 0;
-  if (body.unsubscribed == null) body.unsubscribed = false;
-  body.unsubscribed = Boolean(body.unsubscribed);
+
+  // v2: unsubscribed is removed - the optin_status dropdown covers it.
+  // Strip it in case an old client still sends it.
+  delete body.unsubscribed;
+
+  // If a mailer_id is provided, ensure that mailer exists (lazy create)
+  if (body.mailer_id) {
+    const ensured = await ensureMailerExists(body.mailer_id);
+    if (!ensured.ok) {
+      return NextResponse.json({ error: ensured.error || "Failed to ensure mailer exists" }, { status: 400 });
+    }
+  }
 
   const { data, error } = await supabase
     .from("contacts")
@@ -59,19 +109,28 @@ export async function PUT(req: NextRequest) {
   // Strip auto-maintained fields - they are managed by the trigger
   for (const f of [
     "last_activity_date","engagement_score","created_at","updated_at",
+    "total_sent","total_opens","total_clicks","unsubscribed_count",
   ]) {
     delete fields[f];
   }
 
-  // Coerce numeric/boolean fields if present
+  // Coerce numeric fields if present
   if ("opens" in fields) {
     fields.opens = fields.opens === "" || fields.opens == null ? 0 : Number(fields.opens) || 0;
   }
   if ("clicks" in fields) {
     fields.clicks = fields.clicks === "" || fields.clicks == null ? 0 : Number(fields.clicks) || 0;
   }
-  if ("unsubscribed" in fields) {
-    fields.unsubscribed = Boolean(fields.unsubscribed);
+
+  // v2: unsubscribed is removed - the optin_status dropdown covers it.
+  delete fields.unsubscribed;
+
+  // If mailer_id is changing, ensure the new mailer exists (lazy create)
+  if (fields.mailer_id) {
+    const ensured = await ensureMailerExists(fields.mailer_id);
+    if (!ensured.ok) {
+      return NextResponse.json({ error: ensured.error || "Failed to ensure mailer exists" }, { status: 400 });
+    }
   }
 
   const { data, error } = await supabase

@@ -24,8 +24,8 @@ export default function EditModal({ record, mode, onClose, onSave }: Props) {
 
   useEffect(() => {
     setForm(mode === "edit" && record
-      ? { ...record, opens: record.opens ?? 0, clicks: record.clicks ?? 0, unsubscribed: record.unsubscribed ?? false }
-      : { opens: 0, clicks: 0, unsubscribed: false, optin_status: "Subscribed" }
+      ? { ...record, opens: record.opens ?? 0, clicks: record.clicks ?? 0 }
+      : { opens: 0, clicks: 0, optin_status: "Subscribed" }
     );
     setError("");
   }, [record, mode]);
@@ -52,8 +52,8 @@ export default function EditModal({ record, mode, onClose, onSave }: Props) {
     setForm((prev) => ({ ...prev, [key]: value }));
   }
 
-  // When user picks a different mailer, reset opens/clicks/unsubscribed to defaults
-  // (per the design: opens/clicks/unsubscribed are per (contact, mailer))
+  // When user picks a different mailer, reset opens/clicks to defaults
+  // (per the design: opens/clicks are per (contact, mailer))
   function handleMailerChange(mailerId: string) {
     const trimmed = mailerId.trim();
     const isSameAsForm = (form.mailer_id ?? "") === trimmed;
@@ -61,7 +61,7 @@ export default function EditModal({ record, mode, onClose, onSave }: Props) {
       ...prev,
       mailer_id: trimmed || null,
       // Only reset counters if the mailer actually changed
-      ...(isSameAsForm ? {} : { opens: 0, clicks: 0, unsubscribed: false }),
+      ...(isSameAsForm ? {} : { opens: 0, clicks: 0 }),
     }));
   }
 
@@ -87,6 +87,7 @@ export default function EditModal({ record, mode, onClose, onSave }: Props) {
       }
       // Normalize empty mailer_id to null
       if (!payload.mailer_id) payload.mailer_id = null;
+      // Server will lazily create the mailer if it doesn't exist (avoids FK error)
       const res = await fetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
@@ -234,6 +235,10 @@ export default function EditModal({ record, mode, onClose, onSave }: Props) {
                   <option key={s} value={s}>{s}</option>
                 ))}
               </select>
+              <p className="text-xs text-gray-400 mt-1">
+                Use <strong>Unsubscribed</strong> if the contact opted out.
+                The Mailers tab will count them in unsubscribed_count.
+              </p>
             </div>
           </>)}
 
@@ -258,26 +263,13 @@ export default function EditModal({ record, mode, onClose, onSave }: Props) {
               </datalist>
               <p className="text-xs text-gray-400 mt-1">
                 {mailerOptions.length > 0
-                  ? `${mailerOptions.length} mailer${mailerOptions.length > 1 ? "s" : ""} available`
-                  : "No mailers yet — create one in the Mailers tab first"}
+                  ? `${mailerOptions.length} mailer${mailerOptions.length > 1 ? "s" : ""} available — typing a new ID will auto-create a stub mailer`
+                  : "No mailers yet — typing a new ID will auto-create a stub mailer. You can fill in details later in the Mailers tab"}
               </p>
             </div>
 
             {field("opens", "Opens (count)", "number", false, "0", false)}
             {field("clicks", "Clicks (count)", "number", false, "0", false)}
-
-            {/* Unsubscribed checkbox */}
-            <div className="flex items-end pb-2">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={Boolean(form.unsubscribed)}
-                  onChange={(e) => setVal("unsubscribed", e.target.checked as never)}
-                  className="w-4 h-4 rounded border-gray-300 text-blue-600 cursor-pointer"
-                />
-                <span className="text-sm text-gray-700">Unsubscribed</span>
-              </label>
-            </div>
           </>)}
 
           {mode === "edit" && (
@@ -288,7 +280,7 @@ export default function EditModal({ record, mode, onClose, onSave }: Props) {
                 <div><span className="text-gray-500">Last activity:</span> {record?.last_activity_date ? new Date(record.last_activity_date).toLocaleString() : "—"}</div>
               </div>
               <div className="mt-2 text-gray-500">
-                These update automatically when you save Opens / Clicks / Unsubscribed above. The assigned Mailer's counters in the Mailers tab also update automatically.
+                These update automatically when you save Opens / Clicks above. The assigned Mailer's counters in the Mailers tab also update automatically.
               </div>
             </div>
           )}

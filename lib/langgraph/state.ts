@@ -11,9 +11,9 @@ export interface Message {
 
 // ---- contacts -------------------------------------------------------------
 // One row per person. Each contact is assigned to AT MOST ONE mailer at a time
-// (mailer_id). opens/clicks/unsubscribed are manually entered per (contact,
-// mailer). When you change a contact's mailer_id, you should reset their
-// opens/clicks/unsubscribed to 0/false.
+// (mailer_id). opens/clicks are manually entered per (contact, mailer).
+// The optin_status dropdown covers unsubscribed/bounced state.
+// If a contact is unsubscribed, set optin_status = 'Unsubscribed'.
 export interface ContactRow {
   email: string;
   name: string | null;
@@ -26,7 +26,6 @@ export interface ContactRow {
   mailer_id: string | null;         // FK to mailers.mailer_id (nullable)
   opens: number;                    // manually entered per (contact, mailer)
   clicks: number;                   // manually entered per (contact, mailer)
-  unsubscribed: boolean;            // manually toggled per (contact, mailer)
   last_activity_date: string | null;
   engagement_score: string | null;  // HOT / WARM / COLD (auto)
 }
@@ -36,6 +35,9 @@ export interface ContactRow {
 // every INSERT/UPDATE/DELETE on contacts recomputes the affected mailer's
 // counters from scratch. Never write to these columns directly.
 // open_rate / click_rate / unsubscribe_rate are GENERATED ALWAYS columns.
+//
+// `unsubscribed_count` is computed from contacts where optin_status = 'Unsubscribed'
+// AND mailer_id = this mailer.
 export interface MailerRow {
   mailer_id: string;            // e.g. M001
   subject_line: string;
@@ -47,7 +49,7 @@ export interface MailerRow {
   total_opens: number;         // sum of opens
   unique_clicks: number;       // count of contacts with this mailer_id AND clicks>0
   total_clicks: number;        // sum of clicks
-  unsubscribed_count: number;  // count of contacts with this mailer_id AND unsubscribed=true
+  unsubscribed_count: number;  // count of contacts with this mailer_id AND optin_status='Unsubscribed'
   // generated:
   open_rate: number | null;         // unique_opens  / total_sent * 100
   click_rate: number | null;        // unique_clicks / total_sent * 100

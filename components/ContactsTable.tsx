@@ -4,9 +4,9 @@ import { useState } from "react";
 import { ContactRow } from "@/lib/langgraph/state";
 
 // All columns shown in the table.
-// Per spec v2:
+// Per spec v2.1:
 //   Name | Company | Designation | Email | Phone | Mailer | Opens | Clicks |
-//   Unsub | Opt-in | Last Activity | Engagement
+//   Opt-in | Last Activity | Engagement
 const ALL_COLUMNS: { key: keyof ContactRow; label: string }[] = [
   { key: "name",              label: "Name" },
   { key: "company",           label: "Company" },
@@ -18,7 +18,6 @@ const ALL_COLUMNS: { key: keyof ContactRow; label: string }[] = [
   { key: "mailer_id",         label: "Mailer" },
   { key: "opens",             label: "Opens" },
   { key: "clicks",            label: "Clicks" },
-  { key: "unsubscribed",      label: "Unsub" },
   { key: "optin_status",      label: "Opt-in" },
   { key: "last_activity_date",label: "Last Activity" },
   { key: "engagement_score",  label: "Engagement" },
@@ -26,7 +25,7 @@ const ALL_COLUMNS: { key: keyof ContactRow; label: string }[] = [
 
 const VISIBLE_COLUMNS: (keyof ContactRow)[] = [
   "name", "company", "designation", "email", "phone",
-  "mailer_id", "opens", "clicks", "unsubscribed",
+  "mailer_id", "opens", "clicks",
   "optin_status", "last_activity_date", "engagement_score",
 ];
 
@@ -59,7 +58,7 @@ export default function ContactsTable({
     ? rows.filter((row) =>
         SEARCHABLE_COLUMNS.some((col) => {
           const val = row[col];
-          if (val === null || val === undefined || val === false) return false;
+          if (val === null || val === undefined) return false;
           return String(val).toLowerCase().includes(searchTerm.toLowerCase());
         })
       )
@@ -118,7 +117,7 @@ export default function ContactsTable({
     const rows_data = filteredRows.map((row) =>
       ALL_COLUMNS.map((c) => {
         const val = row[c.key];
-        if (val === null || val === undefined || val === false) return "";
+        if (val === null || val === undefined) return "";
         if (typeof val === "string" && val.includes(",")) return `"${val}"`;
         return String(val);
       })
@@ -136,7 +135,6 @@ export default function ContactsTable({
   function formatValue(row: ContactRow, key: keyof ContactRow): string {
     const val = row[key];
     if (val === null || val === undefined) return "—";
-    if (key === "unsubscribed") return val ? "Yes" : "No";
     if (key === "last_activity_date") {
       try {
         const d = new Date(String(val));
@@ -167,7 +165,6 @@ export default function ContactsTable({
       if (s === "Unsubscribed") return "text-red-500";
       if (s === "Hard Bounced") return "text-orange-600";
     }
-    if (key === "unsubscribed") return val ? "text-red-500 font-medium" : "text-gray-400";
     if (key === "mailer_id") return val ? "text-gray-600 font-mono text-xs" : "text-gray-300";
     if (key === "opens" || key === "clicks") {
       const n = Number(val);

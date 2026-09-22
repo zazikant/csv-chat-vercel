@@ -14,11 +14,10 @@ Columns:
   - phone              (text)                     -- Phone number
   - city               (text)                     -- City
   - sector             (text)                     -- Industry sector
-  - optin_status       (text)                     -- Subscribed / Hard Bounced / Unsubscribed
+  - optin_status       (text)                     -- Subscribed / Hard Bounced / Unsubscribed (dropdown)
   - mailer_id          (text, FK to mailers)       -- Which mailer this contact received. NULL = not yet assigned.
   - opens              (integer)                   -- How many times this contact opened the assigned mailer (manual).
   - clicks             (integer)                   -- How many times this contact clicked links in the assigned mailer (manual).
-  - unsubscribed       (boolean)                   -- True if this contact unsubscribed via this mailer (manual).
   - last_activity_date (timestamptz, auto)        -- Set when opens>0 or clicks>0 (auto).
   - engagement_score   (text, auto)               -- HOT (clicks>0) / WARM (opens>0) / COLD (auto).
 
@@ -33,7 +32,7 @@ Columns:
   - total_opens        (integer, auto)              -- sum of opens across contacts with this mailer_id (auto)
   - unique_clicks      (integer, auto)              -- count of contacts with this mailer_id AND clicks>0 (auto)
   - total_clicks       (integer, auto)              -- sum of clicks across contacts with this mailer_id (auto)
-  - unsubscribed_count (integer, auto)              -- count of contacts with this mailer_id AND unsubscribed=true (auto)
+  - unsubscribed_count (integer, auto)              -- count of contacts with this mailer_id AND optin_status='Unsubscribed' (auto)
   - open_rate          (numeric(5,2), generated)   -- unique_opens  / total_sent * 100 (auto-computed)
   - click_rate         (numeric(5,2), generated)   -- unique_clicks / total_sent * 100 (auto-computed)
   - unsubscribe_rate   (numeric(5,2), generated)   -- unsubscribed_count / total_sent * 100 (auto-computed)
