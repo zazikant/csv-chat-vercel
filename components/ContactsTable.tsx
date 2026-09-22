@@ -7,6 +7,10 @@ import { ContactRow } from "@/lib/langgraph/state";
 // Per spec v2.1:
 //   Name | Company | Designation | Email | Phone | Mailer | Opens | Clicks |
 //   Opt-in | Last Activity | Engagement
+// Extra virtual column key for "Total Mails Sent" (not a real ContactRow field —
+// computed client-side as count of rows with the same email).
+const TOTAL_MAILS_SENT_KEY = "_total_mails_sent" as keyof ContactRow;
+
 const ALL_COLUMNS: { key: keyof ContactRow; label: string }[] = [
   { key: "name",              label: "Name" },
   { key: "company",           label: "Company" },
@@ -22,9 +26,10 @@ const ALL_COLUMNS: { key: keyof ContactRow; label: string }[] = [
   { key: "optin_status",      label: "Opt-in" },
   { key: "last_activity_date",label: "Last Activity" },
   { key: "engagement_score",  label: "Engagement" },
+  { key: TOTAL_MAILS_SENT_KEY, label: "Total Mails Sent" },
 ];
 
-const VISIBLE_COLUMNS: (keyof ContactRow)[] = [
+const VISIBLE_COLUMNS_BASE: (keyof ContactRow)[] = [
   "name", "company", "designation", "email", "phone",
   "tags", "mailer_id", "opens", "clicks",
   "optin_status", "last_activity_date", "engagement_score",
@@ -48,6 +53,9 @@ interface Props {
   onUpload: () => void;
   onBulkDelete: () => void;
   onDeleteRows: (ids: string[]) => void;
+  /** When true, shows an extra "Total Mails Sent" column (count of rows with the same email).
+   *  Used by the Main Database tab. */
+  showTotalMailsSent?: boolean;
 }
 
 interface Filters {
@@ -64,12 +72,27 @@ const EMPTY_FILTERS: Filters = {
 };
 
 export default function ContactsTable({
-  rows, isFiltered, page, onPageChange, onReset, onEdit, onAdd, onUpload, onBulkDelete, onDeleteRows,
+  rows, isFiltered, page, onPageChange, onReset, onEdit, onAdd, onUpload, onBulkDelete, onDeleteRows, showTotalMailsSent = false,
 }: Props) {
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [searchTerm, setSearchTerm] = useState("");
   const [filters, setFilters] = useState<Filters>({ ...EMPTY_FILTERS });
   const [showFilters, setShowFilters] = useState(false);
+
+  // Compute "Total Mails Sent" per email: count of rows with the same email.
+  // This is the number of mailers assigned to that email across all rows.
+  const emailCounts = new Map<string, number>();
+  if (showTotalMailsSent) {
+    for (const row of rows) {
+      const emailKey = (row.email || "").toLowerCase();
+      emailCounts.set(emailKey, (emailCounts.get(emailKey) ?? 0) + 1);
+    }
+  }
+
+  // Visible columns: base columns + optionally "Total Mails Sent"
+  const VISIBLE_COLUMNS = showTotalMailsSent
+    ? [...VISIBLE_COLUMNS_BASE, TOTAL_MAILS_SENT_KEY]
+    : VISIBLE_COLUMNS_BASE;
 
   // Build distinct filter option lists from the data
   const mailerOptions = Array.from(new Set(rows.map((r) => r.mailer_id).filter((x): x is string => !!x))).sort();
@@ -158,9 +181,10 @@ export default function ContactsTable({
   }
 
   function downloadCSV() {
-    const headers = ALL_COLUMNS.map((c) => c.label);
+    const exportCols = ALL_COLUMNS.filter((c) => c.key !== TOTAL_MAILS_SENT_KEY);
+    const headers = exportCols.map((c) => c.label);
     const rows_data = filteredRows.map((row) =>
-      ALL_COLUMNS.map((c) => {
+      exportCols.map((c) => {
         const val = row[c.key];
         if (val === null || val === undefined) return "";
         if (c.key === "tags") {
@@ -183,6 +207,11 @@ export default function ContactsTable({
   }
 
   function formatValue(row: ContactRow, key: keyof ContactRow): React.ReactNode {
+    // Virtual column: "Total Mails Sent" — count of rows with the same email
+    if (key === TOTAL_MAILS_SENT_KEY) {
+      const count = emailCounts.get((row.email || "").toLowerCase()) ?? 0;
+      return <span className="font-mono font-medium text-purple-700">{count}</span>;
+    }
     const val = row[key];
     if (val === null || val === undefined) return "—";
     if (key === "tags") {
@@ -213,6 +242,7 @@ export default function ContactsTable({
   }
 
   function getCellClass(key: keyof ContactRow, val: unknown): string {
+    if (key === TOTAL_MAILS_SENT_KEY) return "text-right font-mono";
     if (val === null || val === undefined) return "text-gray-300";
     if (key === "email") return "text-blue-600";
     if (key === "tags") return "";  // rendered as chips

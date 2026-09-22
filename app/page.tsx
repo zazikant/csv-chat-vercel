@@ -12,7 +12,7 @@ import BulkDeleteModal from "@/components/BulkDeleteModal";
 import SqlQueryBox from "@/components/SqlQueryBox";
 import { ContactRow, MailerRow } from "@/lib/langgraph/state";
 
-type TabKey = "contacts" | "mailers";
+type TabKey = "main" | "contacts" | "mailers";
 type MobileView = "table" | "chat";
 
 async function fetchAllContacts(): Promise<ContactRow[]> {
@@ -29,16 +29,18 @@ async function fetchAllMailers(): Promise<MailerRow[]> {
 
 export default function HomePage() {
   const [sessionId]         = useState(() => uuidv4());
-  const [tab, setTab]       = useState<TabKey>("contacts");
+  const [tab, setTab]       = useState<TabKey>("main");
   // On narrow screens, only one of (table, chat) is shown at a time.
   // On wide screens (md+), both are shown side-by-side and mobileView is ignored.
   const [mobileView, setMobileView] = useState<MobileView>("table");
 
-  // Contacts state
+  // Contacts state (shared between Main Database and Contacts tabs — both
+  // show the same data, just with different columns)
   const [rows, setRows]         = useState<ContactRow[]>([]);
   const [allRows, setAllRows]   = useState<ContactRow[]>([]);
   const [isFiltered, setFiltered] = useState(false);
   const [contactPage, setContactPage] = useState(1);
+  const [mainPage, setMainPage] = useState(1);
 
   // Mailers state
   const [mailers, setMailers] = useState<MailerRow[]>([]);
@@ -69,19 +71,18 @@ export default function HomePage() {
   }
 
   /** Receive rows from the SQL Query Box (paste-your-own SQL flow).
-   *  The result replaces whatever table is currently active (Contacts or Mailers).
-   *  We mark the view as "filtered" so the user can hit "Show all" to reset.
+   *  The result replaces whatever table is currently active (Main Database, Contacts, or Mailers).
    */
   function handleSqlResult(rows: Record<string, unknown>[]) {
-    if (tab === "contacts") {
+    if (tab === "contacts" || tab === "main") {
       setRows(rows as unknown as ContactRow[]);
       setFiltered(true);
       setContactPage(1);
+      setMainPage(1);
     } else {
       setMailers(rows as unknown as MailerRow[]);
     }
     setMailerPage(1);
-    // Switch to table view on mobile so the user sees the result
     setMobileView("table");
   }
 
@@ -218,6 +219,12 @@ export default function HomePage() {
         {/* Tab bar */}
         <div className="flex items-center gap-1 px-4 pt-3 bg-white border-b border-gray-200">
           <TabButton
+            label="Main Database"
+            count={allRows.length}
+            active={tab === "main"}
+            onClick={() => setTab("main")}
+          />
+          <TabButton
             label="Contacts"
             count={allRows.length}
             active={tab === "contacts"}
@@ -247,7 +254,21 @@ export default function HomePage() {
 
         {/* Tab body */}
         <div className="flex-1 overflow-hidden">
-          {tab === "contacts" ? (
+          {tab === "main" ? (
+            <ContactsTable
+              rows={rows}
+              isFiltered={isFiltered}
+              page={mainPage}
+              onPageChange={setMainPage}
+              onReset={handleReset}
+              onEdit={handleEdit}
+              onAdd={handleAdd}
+              onUpload={() => setShowUpload(true)}
+              onBulkDelete={() => setShowBulkDelete(true)}
+              onDeleteRows={handleDeleteRows}
+              showTotalMailsSent
+            />
+          ) : tab === "contacts" ? (
             <ContactsTable
               rows={rows}
               isFiltered={isFiltered}
@@ -333,12 +354,12 @@ export default function HomePage() {
 
       {showBulkDelete ? (
         <BulkDeleteModal
-          entityName={tab === "contacts" ? "Contacts" : "Mailers"}
-          pkFieldName={tab === "contacts" ? "email" : "mailer_id"}
-          pkLabel={tab === "contacts" ? "Email" : "Mailer ID"}
-          pkAliases={tab === "contacts" ? [] : ["mailer"]}
+          entityName={tab === "mailers" ? "Mailers" : "Contacts"}
+          pkFieldName={tab === "mailers" ? "mailer_id" : "email"}
+          pkLabel={tab === "mailers" ? "Mailer ID" : "Email"}
+          pkAliases={tab === "mailers" ? ["mailer"] : []}
           onClose={() => setShowBulkDelete(false)}
-          onDelete={tab === "contacts" ? handleBulkDeleteContacts : handleBulkDeleteMailers}
+          onDelete={tab === "mailers" ? handleBulkDeleteMailers : handleBulkDeleteContacts}
         />
       ) : null}
     </div>
