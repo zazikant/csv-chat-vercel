@@ -68,13 +68,15 @@ export async function POST(req: NextRequest) {
         continue;
       }
 
-      // Text fields: keep existing if new is empty
-      if (v === null || v === undefined || v === "") {
-        const existingVal = existingRow[k];
-        if (existingVal !== null && existingVal !== undefined && existingVal !== "") {
-          continue; // Don't wipe — keep existing
-        }
-        continue; // Both empty — skip
+      // Text fields: if the new value is empty string, CLEAR the field (user
+      // intentionally deleted the text). If the new value is null/undefined,
+      // skip (field wasn't in the form). If non-empty, update.
+      if (v === "") {
+        merged[k] = null; // Clear the field
+        continue;
+      }
+      if (v === null || v === undefined) {
+        continue; // Field not in payload — skip
       }
       merged[k] = v;
     }
@@ -152,16 +154,14 @@ export async function PUT(req: NextRequest) {
     }
 
     // For text fields:
-    // If the new value is null/empty but the DB has a value, keep the DB value.
-    // If the new value is non-empty, use it.
-    if (v === null || v === undefined || v === "") {
-      const existingVal = existingRow[k];
-      if (existingVal !== null && existingVal !== undefined && existingVal !== "") {
-        // Don't wipe — keep existing
-        continue;
-      }
-      // Both empty — skip (don't need to update)
+    // If the new value is empty string, CLEAR the field (user intentionally
+    // deleted the text). If null/undefined, skip (not in payload). If non-empty, update.
+    if (v === "") {
+      mergedFields[k] = null; // Clear the field
       continue;
+    }
+    if (v === null || v === undefined) {
+      continue; // Field not in payload — skip
     }
     mergedFields[k] = v;
   }

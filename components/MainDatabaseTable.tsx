@@ -25,7 +25,7 @@ const VISIBLE_COLUMNS: (keyof MainContactRow)[] = [
 const TOTAL_MAILS_SENT_KEY = "_total_mails_sent" as keyof MainContactRow;
 const PAGE_SIZE = 25;
 const SEARCHABLE_COLUMNS: (keyof MainContactRow)[] = [
-  "name", "company", "designation", "email", "phone", "city", "remarks",
+  "name", "company", "designation", "email", "phone", "city", "remarks", "optin_status",
 ];
 
 interface Filters {
