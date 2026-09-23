@@ -137,6 +137,14 @@ export default function HomePage() {
     setMobileView("table");
   }
 
+  /** When the chat returns query results, update the active tab's table. */
+  function handleChatTableUpdate(rows: Record<string, unknown>[]) {
+    if (tab === "main") { setMainRows(rows as unknown as MainContactRow[]); setMainPage(1); }
+    else if (tab === "contacts") { setContactRows(rows as unknown as ContactRow[]); setContactPage(1); }
+    else { setMailers(rows as unknown as MailerRow[]); setMailerPage(1); }
+    setMobileView("table");
+  }
+
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
       <div className={`flex-1 flex flex-col border-r border-gray-200 min-w-0 overflow-hidden ${mobileView === "chat" ? "hidden md:flex" : "flex"}`}>
@@ -202,7 +210,7 @@ export default function HomePage() {
           <span className="text-xs text-gray-400 font-medium">AI Chat</span>
         </div>
         <div className="flex-1 overflow-hidden">
-          <ChatPanel sessionId={sessionId} currentRows={[]} onTableUpdate={() => {}} activeTab={tab} />
+          <ChatPanel sessionId={sessionId} currentRows={[]} onTableUpdate={handleChatTableUpdate} activeTab={tab} />
         </div>
       </div>
 

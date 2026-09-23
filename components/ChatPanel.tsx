@@ -12,7 +12,7 @@ interface ChatMessage {
 interface Props {
   sessionId: string;
   currentRows: ContactRow[];
-  onTableUpdate: (rows: ContactRow[]) => void;
+  onTableUpdate: (rows: Record<string, unknown>[]) => void;
   activeTab: string;
 }
 
