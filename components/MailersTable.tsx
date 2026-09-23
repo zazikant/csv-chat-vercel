@@ -270,7 +270,7 @@ export default function MailersTable({
           {sortBy && (
             <button
               onClick={() => { setSortBy(null); onPageChange(1); }}
-              className="text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded-full hover:bg-gray-300 transition-colors"
+              className="text-xs bg-purple-100 text-purple-600 px-2 py-0.5 rounded-full hover:bg-purple-200 transition-colors"
             >
               sorted by {String(sortBy)} {sortDir === "asc" ? "↑" : "↓"} ×
             </button>
@@ -299,7 +299,7 @@ export default function MailersTable({
             onClick={() => setShowFilters((s) => !s)}
             className={`px-3 py-1.5 text-xs rounded-lg transition-colors flex items-center gap-1.5 ${
               activeFilterCount > 0 || showFilters
-                ? "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                ? "bg-blue-100 text-blue-700 hover:bg-blue-200"
                 : "text-gray-500 hover:text-gray-700 hover:bg-gray-100"
             }`}
             title="Toggle filters"
@@ -309,7 +309,7 @@ export default function MailersTable({
             </svg>
             Filters
             {activeFilterCount > 0 && (
-              <span className="bg-gray-600 text-white text-[10px] px-1.5 rounded-full">{activeFilterCount}</span>
+              <span className="bg-blue-600 text-white text-[10px] px-1.5 rounded-full">{activeFilterCount}</span>
             )}
           </button>
           <div className="relative">
@@ -355,7 +355,7 @@ export default function MailersTable({
 
       {/* Filter bar — shown when toggle is on */}
       {showFilters && (
-        <div className="px-2 sm:px-4 py-3 border-b border-gray-200 bg-gray-50/70 flex flex-wrap items-end gap-3">
+        <div className="px-4 py-3 border-b border-gray-200 bg-gray-50/70 flex flex-wrap items-end gap-3">
           <div className="flex flex-col gap-1">
             <label className="text-[10px] font-medium text-gray-500 uppercase tracking-wider">Min Open Rate (%)</label>
             <input
@@ -472,7 +472,7 @@ export default function MailersTable({
                   <th
                     key={col.key}
                     onClick={() => handleSort(col.key)}
-                    className={`text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-2.5 border-b border-gray-200 whitespace-nowrap cursor-pointer hover:bg-gray-100 transition-colors ${sortBy === col.key ? "bg-gray-100" : ""}`}
+                    className={`text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-2.5 border-b border-gray-200 whitespace-nowrap cursor-pointer hover:bg-gray-100 transition-colors ${sortBy === col.key ? "bg-blue-50/50" : ""}`}
                   >
                     <div className="flex items-center gap-1">
                       {col.label}
