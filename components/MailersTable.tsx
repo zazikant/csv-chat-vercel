@@ -181,9 +181,11 @@ export default function MailersTable({
     onPageChange(1);
   }
 
-  function downloadCSV() {
+  function downloadCSV(mode: "all" | "selected" = "all") {
+    const exportRows = mode === "selected" ? filteredRows.filter((r) => selected.has(r.mailer_id)) : filteredRows;
+    if (exportRows.length === 0) return;
     const headers = ALL_COLUMNS.map((c) => c.label);
-    const rows_data = filteredRows.map((row) =>
+    const rows_data = exportRows.map((row) =>
       ALL_COLUMNS.map((c) => {
         const val = row[c.key];
         if (val === null || val === undefined) return "";
@@ -196,7 +198,7 @@ export default function MailersTable({
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `mailers_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `mailers_${mode}_${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -324,11 +326,11 @@ export default function MailersTable({
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
             </svg>
           </div>
-          <button onClick={downloadCSV} className="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors flex items-center gap-1.5">
+          <button onClick={() => downloadCSV(selected.size > 0 ? "selected" : "all")} className="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors flex items-center gap-1.5" title={selected.size > 0 ? `Export ${selected.size} selected` : "Export all visible"}>
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
             </svg>
-            <span className="hidden sm:inline">CSV</span>
+            <span className="hidden sm:inline">{selected.size > 0 ? `CSV (${selected.size})` : "CSV"}</span>
           </button>
           <button onClick={onBulkDelete} className="px-3 py-1.5 text-xs border border-red-200 hover:bg-red-50 text-red-600 rounded-lg transition-colors flex items-center gap-1.5" title="Bulk delete mailers via CSV or pasted mailer_id list">
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
