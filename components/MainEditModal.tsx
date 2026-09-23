@@ -15,37 +15,21 @@ interface Props {
 const OPTIN_STATUSES = ["Subscribed", "Hard Bounced", "Unsubscribed"];
 
 export default function MainEditModal({ record, mode, onClose, onSave }: Props) {
-  const [form, setForm] = useState<Partial<MainContactRow>>({});
+  // Initialize form state immediately from record (no useEffect delay)
+  const [form, setForm] = useState<Partial<MainContactRow>>(() => {
+    if (mode === "edit" && record) {
+      return {
+        ...record,
+        tags: Array.isArray(record.tags) ? [...record.tags] : [],
+        sector: Array.isArray(record.sector) ? [...record.sector] : [],
+        source: Array.isArray(record.source) ? [...record.source] : [],
+      };
+    }
+    return { optin_status: "Subscribed", tags: [], sector: [], source: [] };
+  });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [deleting, setDeleting] = useState(false);
-  // Use a ref to prevent the useEffect from re-initializing the form
-  // after the user has started editing (e.g. when a parent re-render
-  // passes a new `record` object reference).
-  const initializedRef = useRef(false);
-
-  useEffect(() => {
-    // Only initialize the form ONCE when the modal opens.
-    // After that, the form state is managed by the user's edits.
-    if (initializedRef.current) return;
-    initializedRef.current = true;
-
-    const initial = mode === "edit" && record
-      ? {
-          ...record,
-          tags: Array.isArray(record.tags) ? record.tags : [],
-          sector: Array.isArray(record.sector) ? record.sector : [],
-          source: Array.isArray(record.source) ? record.source : [],
-        }
-      : { optin_status: "Subscribed", tags: [], sector: [], source: [] };
-    setForm(initial);
-    setError("");
-  }, [record, mode]);
-
-  // Reset the initialized ref when the modal closes
-  useEffect(() => {
-    return () => { initializedRef.current = false; };
-  }, []);
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -53,33 +37,25 @@ export default function MainEditModal({ record, mode, onClose, onSave }: Props) 
     return () => window.removeEventListener("keydown", handleKey);
   }, [onClose]);
 
+  // setVal uses the functional form of setForm to always get the latest state
   function setVal<T extends keyof MainContactRow>(key: T, value: MainContactRow[T]) {
-    setForm((prev) => ({ ...prev, [key]: value }));
+    setForm((prev) => {
+      const next = { ...prev };
+      (next as Record<string, unknown>)[key as string] = value;
+      return next;
+    });
   }
 
   async function handleSave() {
     if (!form.email) { setError("Email is required."); return; }
     setSaving(true); setError("");
     try {
-      // In edit mode, send ALL fields from the form (which was initialized from
-      // the record). This replaces the row entirely with the form's current state.
-      // The form preserves unchanged fields because it was initialized with {...record}.
       const payload: Record<string, unknown> = {};
+      // Send ALL fields that exist in the form
       for (const [k, v] of Object.entries(form)) {
         if (k === "created_at" || k === "updated_at") continue;
-        // Always include arrays (tags/sector/source) — even empty ones
-        if (k === "tags" || k === "sector" || k === "source") {
-          payload[k] = Array.isArray(v) ? v : [];
-          continue;
-        }
-        // Include all other non-null values
-        if (v !== null && v !== undefined) {
-          payload[k] = v;
-        }
+        payload[k] = v;
       }
-
-      // For edit mode: if email changed, we need to update by old email (the PK)
-      // and include the new email in the payload
       if (mode === "edit") {
         const oldEmail = record!.email;
         const newEmail = String(form.email).trim().toLowerCase();
@@ -91,7 +67,6 @@ export default function MainEditModal({ record, mode, onClose, onSave }: Props) 
         });
         if (!res.ok) { const d = await res.json(); throw new Error(d.error || "Save failed"); }
       } else {
-        // Add mode: POST with new email
         payload.email = String(form.email).trim().toLowerCase();
         const res = await fetch("/api/main-contacts", {
           method: "POST",
@@ -143,7 +118,6 @@ export default function MainEditModal({ record, mode, onClose, onSave }: Props) 
             <div>
               <label className="block text-xs font-medium text-gray-500 mb-1.5">Email *</label>
               <input type="email" value={(form.email as string) || ""} onChange={(e) => setVal("email", e.target.value as never)} className="w-full px-3 py-2 text-sm text-gray-900 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300 placeholder-gray-500" placeholder="e.g. rajesh@company.com" />
-              {mode === "edit" && <p className="text-[11px] text-gray-400 mt-1">Changing email updates the primary key and cascades to engagement rows.</p>}
             </div>
             {field("name", "Name", "e.g. Rajesh Kumar")}
           </>)}
