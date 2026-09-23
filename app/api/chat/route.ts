@@ -20,7 +20,7 @@ export const maxDuration = 60;  // Vercel Hobby Node cap — NVIDIA calls run wi
  */
 export async function POST(req: NextRequest) {
   try {
-    const { userQuery, sessionId, currentRows } = await req.json();
+    const { userQuery, sessionId, currentRows, activeTab } = await req.json();
 
     if (!userQuery?.trim() || !sessionId) {
       return NextResponse.json(
@@ -32,7 +32,6 @@ export async function POST(req: NextRequest) {
     const result = await graph.invoke({
       userQuery: userQuery.trim(),
       sessionId,
-      // No conversationHistory fetched — chat is stateless.
       conversationHistory: [],
       queryIntent:   "",
       generatedSQL:  "",
@@ -42,6 +41,7 @@ export async function POST(req: NextRequest) {
       finalResponse: "",
       shouldUpdateTable: false,
       tableSchema:   "",
+      activeTab: activeTab || "main",
       currentRows: currentRows || [],
     });
 

@@ -22,8 +22,11 @@ export interface MainContactRow {
   designation: string | null;
   phone: string | null;
   city: string | null;
-  sector: string | null;
+  sector: string[];
   tags: string[];
+  source: string[];
+  optin_status: string | null;
+  remarks: string | null;
 }
 
 // ---- contacts (engagement — multiple rows per email, one per mailer) -------
@@ -75,45 +78,24 @@ export interface MailerRow {
 // Ported from github.com/zazikant/tradingview-notes-app-nvidia.
 
 export const QueryGraphState = Annotation.Root({
-  userQuery: Annotation<string>({
-    reducer: (_, next) => next,
-  }),
-  sessionId: Annotation<string>({
-    reducer: (_, next) => next,
-  }),
-  queryIntent: Annotation<string>({
-    reducer: (_, next) => next,
-  }),
-  generatedSQL: Annotation<string>({
-    reducer: (_, next) => next,
-  }),
-  queryResult: Annotation<ContactRow[]>({
-    reducer: (_, next) => next,
-  }),
-  queryError: Annotation<string | null>({
-    reducer: (_, next) => next,
-  }),
-  retryCount: Annotation<number>({
-    reducer: (_, next) => next,
-  }),
-  finalResponse: Annotation<string>({
-    reducer: (_, next) => next,
-  }),
-  shouldUpdateTable: Annotation<boolean>({
-    reducer: (_, next) => next,
-  }),
-  tableSchema: Annotation<string>({
-    reducer: (_, next) => next,
-  }),
+  userQuery: Annotation<string>({ reducer: (_, next) => next }),
+  sessionId: Annotation<string>({ reducer: (_, next) => next }),
+  queryIntent: Annotation<string>({ reducer: (_, next) => next }),
+  generatedSQL: Annotation<string>({ reducer: (_, next) => next }),
+  queryResult: Annotation<ContactRow[]>({ reducer: (_, next) => next }),
+  queryError: Annotation<string | null>({ reducer: (_, next) => next }),
+  retryCount: Annotation<number>({ reducer: (_, next) => next }),
+  finalResponse: Annotation<string>({ reducer: (_, next) => next }),
+  shouldUpdateTable: Annotation<boolean>({ reducer: (_, next) => next }),
+  tableSchema: Annotation<string>({ reducer: (_, next) => next }),
+  activeTab: Annotation<string>({ reducer: (_, next) => next }),
   conversationHistory: Annotation<Message[]>({
     reducer: (existing, next) => {
       const merged = [...existing, ...next];
       return merged.slice(-20);
     },
   }),
-  currentRows: Annotation<ContactRow[]>({
-    reducer: (_, next) => next,
-  }),
+  currentRows: Annotation<ContactRow[]>({ reducer: (_, next) => next }),
 });
 
 export type QueryGraphStateType = typeof QueryGraphState.State;

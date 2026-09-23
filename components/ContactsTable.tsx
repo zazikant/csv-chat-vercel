@@ -15,7 +15,7 @@ const ALL_COLUMNS: { key: keyof ContactRow; label: string }[] = [
 
 const VISIBLE_COLUMNS: (keyof ContactRow)[] = [
   "email", "mailer_id", "opens", "clicks",
-  "optin_status", "last_activity_date", "engagement_score",
+  "optin_status", "engagement_score",
 ];
 
 const PAGE_SIZE = 25;

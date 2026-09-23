@@ -12,6 +12,8 @@ interface Props {
   onSave: () => void;
 }
 
+const OPTIN_STATUSES = ["Subscribed", "Hard Bounced", "Unsubscribed"];
+
 export default function MainEditModal({ record, mode, onClose, onSave }: Props) {
   const [form, setForm] = useState<Partial<MainContactRow>>({});
   const [saving, setSaving] = useState(false);
@@ -19,7 +21,7 @@ export default function MainEditModal({ record, mode, onClose, onSave }: Props) 
   const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
-    setForm(mode === "edit" && record ? { ...record } : {});
+    setForm(mode === "edit" && record ? { ...record } : { optin_status: "Subscribed", tags: [], sector: [], source: [] });
     setError("");
   }, [record, mode]);
 
@@ -41,6 +43,9 @@ export default function MainEditModal({ record, mode, onClose, onSave }: Props) 
       delete payload.created_at; delete payload.updated_at;
       if (mode === "edit") payload.email = record!.email;
       payload.tags = Array.isArray(payload.tags) ? payload.tags : [];
+      payload.sector = Array.isArray(payload.sector) ? payload.sector : [];
+      payload.source = Array.isArray(payload.source) ? payload.source : [];
+      if (!payload.remarks) delete payload.remarks;
       const res = await fetch("/api/main-contacts", {
         method: mode === "edit" ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
@@ -56,11 +61,7 @@ export default function MainEditModal({ record, mode, onClose, onSave }: Props) 
     if (!confirm("Delete this contact? This will also delete all their engagement rows.")) return;
     setDeleting(true); setError("");
     try {
-      const res = await fetch("/api/main-contacts", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: record!.email }),
-      });
+      const res = await fetch("/api/main-contacts", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: record!.email }) });
       if (!res.ok) throw new Error("Delete failed");
       onSave();
     } catch (err) { setError(err instanceof Error ? err.message : "Delete failed"); }
@@ -73,14 +74,10 @@ export default function MainEditModal({ record, mode, onClose, onSave }: Props) 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">{children}</div>
     </div>
   );
-  const field = (key: keyof MainContactRow, label: string, type: "text" | "email", placeholder?: string, disabled = false) => (
+  const field = (key: keyof MainContactRow, label: string, placeholder?: string, disabled = false) => (
     <div key={key}>
       <label className="block text-xs font-medium text-gray-500 mb-1.5">{label}</label>
-      {type === "email" ? (
-        <input type="email" value={(form[key] as string) || ""} disabled={disabled} onChange={(e) => setVal(key, e.target.value as never)} className="w-full px-3 py-2 text-sm text-gray-900 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300 placeholder-gray-500 disabled:bg-gray-50 disabled:text-gray-400" placeholder={placeholder} />
-      ) : (
-        <FieldSuggest column={key} value={(form[key] as string) || ""} onChange={(v) => setVal(key, v as never)} placeholder={placeholder} className="w-full" />
-      )}
+      <FieldSuggest column={key} value={(form[key] as string) || ""} onChange={(v) => setVal(key, v as never)} placeholder={placeholder} className="w-full" />
     </div>
   );
 
@@ -90,27 +87,49 @@ export default function MainEditModal({ record, mode, onClose, onSave }: Props) 
       <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden mx-2 sm:mx-auto">
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 flex-shrink-0">
           <h2 className="text-base font-semibold text-gray-800">{mode === "edit" ? "Edit Contact" : "Add New Contact"}</h2>
-          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-          </button>
+          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
         </div>
         <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
           {error && <div className="px-4 py-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-600">{error}</div>}
           {section("Identity", <>
-            {field("email", "Email *", "email", "e.g. rajesh@company.com", mode === "edit")}
-            {field("name", "Name", "text", "e.g. Rajesh Kumar")}
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1.5">Email *</label>
+              <input type="email" value={(form.email as string) || ""} disabled={mode === "edit"} onChange={(e) => setVal("email", e.target.value)} className="w-full px-3 py-2 text-sm text-gray-900 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300 placeholder-gray-500 disabled:bg-gray-50 disabled:text-gray-400" placeholder="e.g. rajesh@company.com" />
+            </div>
+            {field("name", "Name", "e.g. Rajesh Kumar")}
           </>)}
           {section("Organization", <>
-            {field("company", "Company", "text", "e.g. Godrej Properties")}
-            {field("designation", "Designation", "text", "e.g. Project Manager")}
-            {field("city", "City", "text", "e.g. Mumbai")}
-            {field("sector", "Sector", "text", "e.g. Real Estate")}
+            {field("company", "Company", "e.g. Godrej Properties")}
+            {field("designation", "Designation", "e.g. Project Manager")}
+            {field("city", "City", "e.g. Mumbai")}
           </>)}
-          {section("Contact", <>{field("phone", "Phone", "text", "e.g. +91 9876543210")}</>)}
-          {section("Tags", <>
+          {section("Contact", <>
+            {field("phone", "Phone", "e.g. +91 9876543210")}
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1.5">Opt-in Status</label>
+              <select value={(form.optin_status as string) || "Subscribed"} onChange={(e) => setVal("optin_status", e.target.value as never)} className="w-full px-3 py-2 text-sm text-gray-900 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300 bg-white">
+                {OPTIN_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+          </>)}
+          {section("Categorization", <>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1.5">Sector</label>
+              <TagsInput value={Array.isArray(form.sector) ? form.sector : []} onChange={(v) => setVal("sector", v as never)} placeholder="e.g. Real Estate, Infrastructure" className="w-full" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1.5">Source</label>
+              <TagsInput value={Array.isArray(form.source) ? form.source : []} onChange={(v) => setVal("source", v as never)} placeholder="e.g. LinkedIn, Referral" className="w-full" />
+            </div>
             <div className="col-span-1 sm:col-span-2">
               <label className="block text-xs font-medium text-gray-500 mb-1.5">Tags</label>
-              <TagsInput value={Array.isArray(form.tags) ? form.tags : []} onChange={(tags) => setVal("tags", tags as never)} placeholder="e.g. vip, mumbai" className="w-full" />
+              <TagsInput value={Array.isArray(form.tags) ? form.tags : []} onChange={(v) => setVal("tags", v as never)} placeholder="e.g. vip, mumbai" className="w-full" />
+            </div>
+          </>)}
+          {section("Remarks", <>
+            <div className="col-span-1 sm:col-span-2">
+              <label className="block text-xs font-medium text-gray-500 mb-1.5">Remarks</label>
+              <textarea value={(form.remarks as string) || ""} onChange={(e) => setVal("remarks", e.target.value as never)} rows={3} placeholder="Free-text notes..." className="w-full px-3 py-2 text-sm text-gray-900 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300 resize-none placeholder-gray-500" />
             </div>
           </>)}
         </div>

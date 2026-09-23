@@ -13,9 +13,9 @@ import { QueryGraphStateType } from "./state";
  */
 
 export async function schemaLoaderNode(
-  _state: QueryGraphStateType
+  state: QueryGraphStateType
 ): Promise<Partial<QueryGraphStateType>> {
-  const schema = getTableSchema();
+  const schema = getTableSchema(state.activeTab);
   console.log("📋 [SchemaLoader] Done.");
   return { tableSchema: schema };
 }

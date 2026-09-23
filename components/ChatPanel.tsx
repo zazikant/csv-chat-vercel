@@ -13,16 +13,23 @@ interface Props {
   sessionId: string;
   currentRows: ContactRow[];
   onTableUpdate: (rows: ContactRow[]) => void;
+  activeTab: string;
 }
 
 const NVIDIA_MODEL = "nvidia/nemotron-3-super-120b-a12b";
 
-export default function ChatPanel({ sessionId, currentRows, onTableUpdate }: Props) {
+const TAB_LABELS: Record<string, string> = {
+  main: "Main Database (identity data)",
+  contacts: "Contacts (engagement data)",
+  mailers: "Mailers (campaign data)",
+};
+
+export default function ChatPanel({ sessionId, currentRows, onTableUpdate, activeTab }: Props) {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       role: "assistant",
       content:
-        "Hi! Ask me anything about your contacts, mailers, and email events. Try: \"Show hot contacts\", \"Which mailer had the best open rate?\", or \"Who opened M001?\"",
+        `Hi! I'm looking at the **${TAB_LABELS[activeTab] || "data"}** tab. Ask me anything about it. Try: "Show all", "Best open rate", or "Who is HOT?"`,
     },
   ]);
   const [input, setInput]     = useState("");
@@ -49,7 +56,7 @@ export default function ChatPanel({ sessionId, currentRows, onTableUpdate }: Pro
         body: JSON.stringify({
           userQuery: query,
           sessionId,
-          // Server reads NVIDIA_API_KEY from env — never sent from browser.
+          activeTab,
           currentRows: [],
         }),
       });

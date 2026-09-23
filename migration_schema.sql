@@ -94,18 +94,28 @@ create table public.main_contacts (
     designation        text,
     phone              text,
     city               text,
-    sector             text,
+    sector             text[]      default '{}',
     tags               text[]      default '{}',
+    source             text[]      default '{}',
+    optin_status       text        default 'Subscribed',
+    remarks            text,
     created_at         timestamptz default now(),
     updated_at         timestamptz default now()
 );
 
-comment on table  public.main_contacts is 'Master contact list. 1 row per email. Identity data only (name/company/designation/phone/city/sector/tags). Engagement data lives in contacts table.';
-comment on column public.main_contacts.email is 'Primary key. Lowercase. The same email appears once here regardless of how many mailers they received.';
+comment on table  public.main_contacts is 'Master contact list. 1 row per email. Identity data + optin + source + remarks. Engagement data lives in contacts table.';
+comment on column public.main_contacts.email is 'Primary key. Lowercase.';
+comment on column public.main_contacts.sector is 'Industry sectors (text array, tag-style). e.g. {Real Estate, Infrastructure}';
+comment on column public.main_contacts.source is 'Lead source (text array, tag-style). e.g. {LinkedIn, Referral, Website}';
+comment on column public.main_contacts.optin_status is 'Subscribed / Hard Bounced / Unsubscribed.';
+comment on column public.main_contacts.remarks is 'Free-text notes.';
 
 create index if not exists main_contacts_company_idx    on public.main_contacts (company);
 create index if not exists main_contacts_name_idx       on public.main_contacts (name);
+create index if not exists main_contacts_optin_idx      on public.main_contacts (optin_status);
 create index if not exists main_contacts_tags_gin_idx   on public.main_contacts using gin (tags);
+create index if not exists main_contacts_source_gin_idx on public.main_contacts using gin (source);
+create index if not exists main_contacts_sector_gin_idx on public.main_contacts using gin (sector);
 
 
 -- ---------------------------------------------------------------------

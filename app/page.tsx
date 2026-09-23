@@ -202,7 +202,7 @@ export default function HomePage() {
           <span className="text-xs text-gray-400 font-medium">AI Chat</span>
         </div>
         <div className="flex-1 overflow-hidden">
-          <ChatPanel sessionId={sessionId} currentRows={[]} onTableUpdate={() => {}} />
+          <ChatPanel sessionId={sessionId} currentRows={[]} onTableUpdate={() => {}} activeTab={tab} />
         </div>
       </div>
 

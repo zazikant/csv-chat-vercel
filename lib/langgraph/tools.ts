@@ -13,7 +13,8 @@ import { ContactRow, Message } from "./state";
  * If the LLM hallucinates columns or writes wrong SQL, the fix is usually
  * here — make the description clearer.
  */
-export function getTableSchema(): string {
+export function getTableSchema(activeTab?: string): string {
+  const tab = activeTab || "main";
   return `
 You are querying an "Email Campaign Tracker" database with TWO tables.
 The app does NOT send emails automatically — it tracks them manually.
