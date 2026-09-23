@@ -38,6 +38,7 @@ export async function POST(req: NextRequest) {
   if (body.tags !== undefined) body.tags = normalizeArray(body.tags);
   if (body.sector !== undefined) body.sector = normalizeArray(body.sector);
   if (body.source !== undefined) body.source = normalizeArray(body.source);
+  if (body.assigned_to !== undefined) body.assigned_to = normalizeArray(body.assigned_to);
   if (body.optin_status !== undefined) body.optin_status = normalizeOptinStatus(body.optin_status);
   for (const f of ["created_at", "updated_at"]) delete body[f];
 
@@ -58,7 +59,7 @@ export async function POST(req: NextRequest) {
     for (const [k, v] of Object.entries(body)) {
       if (k === "email") { merged.email = v; continue; }
 
-      if (k === "tags" || k === "sector" || k === "source") {
+      if (k === "tags" || k === "sector" || k === "source" || k === "assigned_to") {
         const newArr = Array.isArray(v) ? v : [];
         const existingArr = Array.isArray(existingRow[k]) ? existingRow[k] : [];
         if (newArr.length === 0 && existingArr.length > 0) {
@@ -112,6 +113,7 @@ export async function PUT(req: NextRequest) {
   if (fields.tags !== undefined) fields.tags = normalizeArray(fields.tags);
   if (fields.sector !== undefined) fields.sector = normalizeArray(fields.sector);
   if (fields.source !== undefined) fields.source = normalizeArray(fields.source);
+  if (fields.assigned_to !== undefined) fields.assigned_to = normalizeArray(fields.assigned_to);
   if (fields.optin_status !== undefined) fields.optin_status = normalizeOptinStatus(fields.optin_status);
 
   // MERGE SEMANTICS: fetch the existing record first.
@@ -142,7 +144,7 @@ export async function PUT(req: NextRequest) {
     // For array fields (tags, sector, source):
     // If the new value is empty [] but the DB has values, keep the DB values.
     // If the new value is non-empty, use it (user changed it).
-    if (k === "tags" || k === "sector" || k === "source") {
+    if (k === "tags" || k === "sector" || k === "source" || k === "assigned_to") {
       const newArr = Array.isArray(v) ? v : [];
       const existingArr = Array.isArray(existingRow[k]) ? existingRow[k] : [];
       if (newArr.length === 0 && existingArr.length > 0) {

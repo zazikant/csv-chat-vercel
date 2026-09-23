@@ -25,6 +25,7 @@ export interface MainContactRow {
   sector: string[];
   tags: string[];
   source: string[];
+  assigned_to: string[];
   optin_status: string | null;
   remarks: string | null;
 }

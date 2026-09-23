@@ -26,6 +26,7 @@ Columns:
   - sector        text[]       Industry sectors (tag-style). e.g. {real estate, infrastructure}
   - tags          text[]       Free-form tags. e.g. {vip, mumbai}
   - source        text[]       Lead source (tag-style). e.g. {linkedin, referral}
+  - assigned_to   text[]       Assigned to (tag-style). e.g. {rajesh, sales team}
   - optin_status   text        "Subscribed" | "Hard Bounced" | "Unsubscribed"
   - remarks       text        Free-text notes
 

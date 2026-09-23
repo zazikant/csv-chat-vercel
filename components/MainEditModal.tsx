@@ -23,9 +23,10 @@ export default function MainEditModal({ record, mode, onClose, onSave }: Props) 
         tags: Array.isArray(record.tags) ? [...record.tags] : [],
         sector: Array.isArray(record.sector) ? [...record.sector] : [],
         source: Array.isArray(record.source) ? [...record.source] : [],
+        assigned_to: Array.isArray(record.assigned_to) ? [...record.assigned_to] : [],
       };
     }
-    return { optin_status: "Subscribed", tags: [], sector: [], source: [] };
+    return { optin_status: "Subscribed", tags: [], sector: [], source: [], assigned_to: [] };
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -143,6 +144,10 @@ export default function MainEditModal({ record, mode, onClose, onSave }: Props) 
             <div>
               <label className="block text-xs font-medium text-gray-500 mb-1.5">Source</label>
               <TagsInput value={Array.isArray(form.source) ? form.source : []} onChange={(v) => setVal("source", v as never)} placeholder="e.g. LinkedIn, Referral" className="w-full" suggestionsEndpoint="/api/sources" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1.5">Assigned To</label>
+              <TagsInput value={Array.isArray(form.assigned_to) ? form.assigned_to : []} onChange={(v) => setVal("assigned_to", v as never)} placeholder="e.g. Rajesh, Sales Team" className="w-full" suggestionsEndpoint="/api/assigned-to" />
             </div>
             <div className="col-span-1 sm:col-span-2">
               <label className="block text-xs font-medium text-gray-500 mb-1.5">Tags</label>

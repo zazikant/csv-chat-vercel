@@ -12,6 +12,7 @@ const ALL_COLUMNS: { key: keyof MainContactRow; label: string }[] = [
   { key: "city",        label: "City" },
   { key: "sector",      label: "Sector" },
   { key: "source",      label: "Source" },
+  { key: "assigned_to", label: "Assigned To" },
   { key: "tags",        label: "Tags" },
   { key: "optin_status", label: "Opt-in" },
   { key: "remarks",     label: "Remarks" },
@@ -19,7 +20,7 @@ const ALL_COLUMNS: { key: keyof MainContactRow; label: string }[] = [
 
 const VISIBLE_COLUMNS: (keyof MainContactRow)[] = [
   "name", "company", "designation", "email", "phone",
-  "city", "sector", "source", "tags", "optin_status", "remarks",
+  "city", "sector", "source", "assigned_to", "tags", "optin_status", "remarks",
 ];
 
 const TOTAL_MAILS_SENT_KEY = "_total_mails_sent" as keyof MainContactRow;
@@ -34,8 +35,9 @@ interface Filters {
   sector: string;
   source: string;
   tag: string;
+  assigned_to: string;
 }
-const EMPTY_FILTERS: Filters = { optin_status: "", city: "", sector: "", source: "", tag: "" };
+const EMPTY_FILTERS: Filters = { optin_status: "", city: "", sector: "", source: "", tag: "", assigned_to: "" };
 
 interface Props {
   rows: MainContactRow[];
@@ -75,6 +77,7 @@ export default function MainDatabaseTable({
   const sectorOptions = Array.from(new Set(rows.flatMap((r) => Array.isArray(r.sector) ? r.sector : []))).sort();
   const sourceOptions = Array.from(new Set(rows.flatMap((r) => Array.isArray(r.source) ? r.source : []))).sort();
   const tagOptions = Array.from(new Set(rows.flatMap((r) => Array.isArray(r.tags) ? r.tags : []))).sort();
+  const assignedToOptions = Array.from(new Set(rows.flatMap((r) => Array.isArray(r.assigned_to) ? r.assigned_to : []))).sort();
   const activeFilterCount = (Object.keys(filters) as (keyof Filters)[]).filter((k) => filters[k] !== "").length;
 
   const filteredRows = rows.filter((row) => {
@@ -97,6 +100,7 @@ export default function MainDatabaseTable({
     if (filters.sector && !(Array.isArray(row.sector) && row.sector.includes(filters.sector))) return false;
     if (filters.source && !(Array.isArray(row.source) && row.source.includes(filters.source))) return false;
     if (filters.tag && !(Array.isArray(row.tags) && row.tags.includes(filters.tag))) return false;
+    if (filters.assigned_to && !(Array.isArray(row.assigned_to) && row.assigned_to.includes(filters.assigned_to))) return false;
     return true;
   });
 
@@ -118,7 +122,7 @@ export default function MainDatabaseTable({
     const rowsData = exportRows.map((row) => [...exportCols.map((c) => {
       const val = row[c.key];
       if (val === null || val === undefined) return "";
-      if (c.key === "tags" || c.key === "sector" || c.key === "source") { const a = val as unknown as string[]; return a.length > 0 ? `"${a.join(", ")}"` : ""; }
+      if (c.key === "tags" || c.key === "sector" || c.key === "source" || c.key === "assigned_to") { const a = val as unknown as string[]; return a.length > 0 ? `"${a.join(", ")}"` : ""; }
       if (typeof val === "string" && val.includes(",")) return `"${val}"`;
       return String(val);
     }), String(totalMailsSent.get(row.email.toLowerCase()) ?? 0)]);
@@ -131,7 +135,7 @@ export default function MainDatabaseTable({
     if (key === TOTAL_MAILS_SENT_KEY) { const count = totalMailsSent.get(row.email.toLowerCase()) ?? 0; return <span className="font-mono font-medium text-purple-700">{count}</span>; }
     const val = row[key];
     if (val === null || val === undefined) return "—";
-    if (key === "tags" || key === "sector" || key === "source") return renderChips(val);
+    if (key === "tags" || key === "sector" || key === "source" || key === "assigned_to") return renderChips(val);
     if (key === "remarks") { const s = String(val); return s.length > 40 ? s.slice(0, 40) + "…" : s; }
     return String(val);
   }
@@ -140,7 +144,7 @@ export default function MainDatabaseTable({
     if (key === TOTAL_MAILS_SENT_KEY) return "text-right font-mono";
     if (val === null || val === undefined) return "text-gray-300";
     if (key === "email") return "text-blue-600";
-    if (key === "tags" || key === "sector" || key === "source") return "";
+    if (key === "tags" || key === "sector" || key === "source" || key === "assigned_to") return "";
     if (key === "optin_status") {
       const s = String(val);
       if (s === "Subscribed") return "text-green-600";
@@ -187,6 +191,7 @@ export default function MainDatabaseTable({
           <FilterSelect label="City" value={filters.city} onChange={(v) => { setFilters((f) => ({ ...f, city: v })); onPageChange(1); }} options={[{ value: "", label: "Any city" }, ...cityOptions.map((c) => ({ value: c, label: c }))]} />
           <SearchableFilter label="Sector" value={filters.sector} onChange={(v) => { setFilters((f) => ({ ...f, sector: v })); onPageChange(1); }} options={sectorOptions} />
           <SearchableFilter label="Source" value={filters.source} onChange={(v) => { setFilters((f) => ({ ...f, source: v })); onPageChange(1); }} options={sourceOptions} />
+          <SearchableFilter label="Assigned To" value={filters.assigned_to} onChange={(v) => { setFilters((f) => ({ ...f, assigned_to: v })); onPageChange(1); }} options={assignedToOptions} />
           <SearchableFilter label="Tag" value={filters.tag} onChange={(v) => { setFilters((f) => ({ ...f, tag: v })); onPageChange(1); }} options={tagOptions} />
           {activeFilterCount > 0 && <button onClick={() => { setFilters({ ...EMPTY_FILTERS }); onPageChange(1); }} className="px-3 py-1.5 text-xs text-orange-500 hover:text-orange-700 hover:bg-orange-50 rounded-lg transition-colors ml-auto">Clear filters ({activeFilterCount})</button>}
         </div>
