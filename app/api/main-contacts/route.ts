@@ -41,9 +41,58 @@ export async function POST(req: NextRequest) {
   if (body.optin_status !== undefined) body.optin_status = normalizeOptinStatus(body.optin_status);
   for (const f of ["created_at", "updated_at"]) delete body[f];
 
+  // Check if email already exists — if so, use MERGE logic (same as PUT):
+  // only update fields with non-empty values; preserve existing DB values
+  // for fields that are empty/null in the payload.
+  const { data: existing } = await supabase
+    .from("main_contacts")
+    .select("*")
+    .eq("email", body.email)
+    .maybeSingle();
+
+  if (existing) {
+    // Email exists — MERGE: keep existing values for empty fields
+    const existingRow = existing as Record<string, unknown>;
+    const merged: Record<string, unknown> = {};
+
+    for (const [k, v] of Object.entries(body)) {
+      if (k === "email") { merged.email = v; continue; }
+
+      if (k === "tags" || k === "sector" || k === "source") {
+        const newArr = Array.isArray(v) ? v : [];
+        const existingArr = Array.isArray(existingRow[k]) ? existingRow[k] : [];
+        if (newArr.length === 0 && existingArr.length > 0) {
+          continue; // Don't wipe — keep existing
+        }
+        merged[k] = newArr;
+        continue;
+      }
+
+      // Text fields: keep existing if new is empty
+      if (v === null || v === undefined || v === "") {
+        const existingVal = existingRow[k];
+        if (existingVal !== null && existingVal !== undefined && existingVal !== "") {
+          continue; // Don't wipe — keep existing
+        }
+        continue; // Both empty — skip
+      }
+      merged[k] = v;
+    }
+
+    const { data, error } = await supabase
+      .from("main_contacts")
+      .update(merged)
+      .eq("email", body.email)
+      .select()
+      .single();
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json(data, { status: 200 });
+  }
+
+  // Email doesn't exist — INSERT new record
   const { data, error } = await supabase
     .from("main_contacts")
-    .upsert(body, { onConflict: "email" })
+    .insert(body)
     .select()
     .single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
