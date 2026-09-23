@@ -60,12 +60,10 @@ export async function POST(req: NextRequest) {
       if (k === "email") { merged.email = v; continue; }
 
       if (k === "tags" || k === "sector" || k === "source" || k === "assigned_to") {
-        const newArr = Array.isArray(v) ? v : [];
-        const existingArr = Array.isArray(existingRow[k]) ? existingRow[k] : [];
-        if (newArr.length === 0 && existingArr.length > 0) {
-          continue; // Don't wipe — keep existing
-        }
-        merged[k] = newArr;
+        // Always use the new value — if user cleared all tags, the array is []
+        // and we should write [] to the DB (clearing the field).
+        // The old merge logic (skip if empty) prevented intentional clearing.
+        merged[k] = Array.isArray(v) ? v : [];
         continue;
       }
 
@@ -145,19 +143,12 @@ export async function PUT(req: NextRequest) {
     // If the new value is empty [] but the DB has values, keep the DB values.
     // If the new value is non-empty, use it (user changed it).
     if (k === "tags" || k === "sector" || k === "source" || k === "assigned_to") {
-      const newArr = Array.isArray(v) ? v : [];
-      const existingArr = Array.isArray(existingRow[k]) ? existingRow[k] : [];
-      if (newArr.length === 0 && existingArr.length > 0) {
-        // Don't wipe — keep existing
-        continue;
-      }
-      mergedFields[k] = newArr;
+      // Always use the new value — if user cleared all tags, write [] to DB.
+      mergedFields[k] = Array.isArray(v) ? v : [];
       continue;
     }
 
-    // For text fields:
-    // If the new value is empty string, CLEAR the field (user intentionally
-    // deleted the text). If null/undefined, skip (not in payload). If non-empty, update.
+    // Text fields: if the new value is empty string, CLEAR the field.
     if (v === "") {
       mergedFields[k] = null; // Clear the field
       continue;
