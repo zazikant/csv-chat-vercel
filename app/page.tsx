@@ -217,7 +217,7 @@ export default function HomePage() {
       )}
 
       {showUpload && (
-        <CSVUploadModal onClose={() => setShowUpload(false)} onUpload={() => { setShowUpload(false); reloadMain(); reloadContacts(); }} />
+        <CSVUploadModal onClose={() => setShowUpload(false)} onUpload={() => { setShowUpload(false); reloadMain(); reloadContacts(); }} tab={tab} />
       )}
       {showBulkDelete && (
         <BulkDeleteModal

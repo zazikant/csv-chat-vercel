@@ -2,15 +2,20 @@
 
 import { useState, useEffect, useRef } from "react";
 
-const TEMPLATE_HEADERS = ["email", "mailer_id", "opens", "clicks", "optin_status"];
-const FIELD_LABELS: Record<string, string> = {
-  email: "Email", mailer_id: "Mailer ID", opens: "Opens", clicks: "Clicks", optin_status: "Opt-in Status",
-};
+const CONTACTS_HEADERS = ["email", "mailer_id", "opens", "clicks", "optin_status"];
+const CONTACTS_LABELS: Record<string, string> = { email: "Email", mailer_id: "Mailer ID", opens: "Opens", clicks: "Clicks", optin_status: "Opt-in Status" };
+
+const MAIN_HEADERS = ["email", "name", "company", "designation", "phone", "city", "sector", "source", "tags", "optin_status", "remarks"];
+const MAIN_LABELS: Record<string, string> = { email: "Email", name: "Name", company: "Company", designation: "Designation", phone: "Phone", city: "City", sector: "Sector (comma-sep)", source: "Source (comma-sep)", tags: "Tags (comma-sep)", optin_status: "Opt-in Status", remarks: "Remarks" };
 
 interface ParsedRow { rowIndex: number; data: Record<string, unknown>; errors: string[]; }
-interface Props { onClose: () => void; onUpload: () => void; }
+interface Props { onClose: () => void; onUpload: () => void; tab: string; }
 
-export default function CSVUploadModal({ onClose, onUpload }: Props) {
+export default function CSVUploadModal({ onClose, onUpload, tab }: Props) {
+  const isMain = tab === "main";
+  const TEMPLATE_HEADERS = isMain ? MAIN_HEADERS : CONTACTS_HEADERS;
+  const FIELD_LABELS = isMain ? MAIN_LABELS : CONTACTS_LABELS;
+
   const [step, setStep] = useState<"upload" | "preview">("upload");
   const [fileName, setFileName] = useState("");
   const [parsedRows, setParsedRows] = useState<ParsedRow[]>([]);
@@ -25,47 +30,15 @@ export default function CSVUploadModal({ onClose, onUpload }: Props) {
   }, [onClose]);
 
   function downloadTemplate() {
-    const headers = Object.values(FIELD_LABELS);
-    const example = ["rajesh@contractor.com", "M001", "3", "1", "Subscribed"];
+    const headers = TEMPLATE_HEADERS.map((h) => FIELD_LABELS[h]);
+    const example = isMain
+      ? ["rajesh@contractor.com", "Rajesh Kumar", "ABC Contractors", "Project Manager", "+91 9876543210", "Mumbai", "Real Estate, Infrastructure", "LinkedIn, Referral", "vip, mumbai", "Subscribed", "Key decision maker"]
+      : ["rajesh@contractor.com", "M001", "3", "1", "Subscribed"];
     const csv = [headers, example].map((r) => r.join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href = url; a.download = "contacts_template.csv"; a.click();
+    const a = document.createElement("a"); a.href = url; a.download = `${isMain ? "main_database" : "contacts"}_template.csv`; a.click();
     URL.revokeObjectURL(url);
-  }
-
-  function normalizeOptinStatus(raw: string): string {
-    const s = raw.trim().toLowerCase().replace(/[-_\s]+/g, " ");
-    if (s === "hard bounced" || s === "hardbounced" || s === "hb" || s === "bounced") return "Hard Bounced";
-    if (s === "unsubscribed" || s === "unsub" || s === "opted out") return "Unsubscribed";
-    return "Subscribed";
-  }
-
-  function validateRow(index: number, row: Record<string, string>): ParsedRow {
-    const errors: string[] = [];
-    const data: Record<string, unknown> = {};
-    const str = (v: string | undefined, key: string) => { const t = (v || "").trim(); if (t) data[key] = t; };
-    const num = (v: string | undefined, key: string) => { const t = (v || "").trim(); data[key] = t ? (parseInt(t, 10) || 0) : 0; };
-    str(row.email, "email"); str(row.mailer_id, "mailer_id"); num(row.opens, "opens"); num(row.clicks, "clicks");
-    if (row.optin_status) data.optin_status = normalizeOptinStatus(row.optin_status);
-    if (!data.email) errors.push("email is required");
-    return { rowIndex: index, data, errors };
-  }
-
-  function parseCSV(text: string): ParsedRow[] {
-    const lines = parseCSVLines(text); if (lines.length < 2) return [];
-    const headers = lines[0].map((h) => h.toLowerCase().trim().replace(/\s+/g, "_"));
-    const map: Record<string, string> = {
-      email: "email", mailer_id: "mailer_id", mailer: "mailer_id", opens: "opens", open_count: "opens",
-      clicks: "clicks", click_count: "clicks", optin_status: "optin_status", opt_in_status: "optin_status", "opt-in": "optin_status", optin: "optin_status",
-    };
-    const result: ParsedRow[] = [];
-    for (let i = 1; i < lines.length; i++) {
-      const values = lines[i]; const row: Record<string, string> = {}; let hasData = false;
-      headers.forEach((h, idx) => { const key = map[h] || h; row[key] = values[idx] || ""; if (values[idx]?.trim()) hasData = true; });
-      if (hasData) result.push(validateRow(i, row));
-    }
-    return result;
   }
 
   function parseCSVLines(text: string): string[][] {
@@ -81,6 +54,59 @@ export default function CSVUploadModal({ onClose, onUpload }: Props) {
     return result;
   }
 
+  function validateRow(index: number, row: Record<string, string>): ParsedRow {
+    const errors: string[] = [];
+    const data: Record<string, unknown> = {};
+    const str = (v: string | undefined, key: string) => { const t = (v || "").trim(); if (t) data[key] = t; };
+    const arr = (v: string | undefined, key: string) => { const t = (v || "").trim(); data[key] = t ? t.split(/[,;]/).map((s) => s.trim().toLowerCase()).filter(Boolean) : []; };
+    const num = (v: string | undefined, key: string) => { const t = (v || "").trim(); data[key] = t ? (parseInt(t, 10) || 0) : 0; };
+
+    str(row.email, "email");
+    if (!data.email) errors.push("email is required");
+
+    if (isMain) {
+      str(row.name, "name"); str(row.company, "company"); str(row.designation, "designation");
+      str(row.phone, "phone"); str(row.city, "city");
+      arr(row.sector, "sector"); arr(row.source, "source"); arr(row.tags, "tags");
+      str(row.optin_status, "optin_status"); str(row.remarks, "remarks");
+    } else {
+      str(row.mailer_id, "mailer_id"); num(row.opens, "opens"); num(row.clicks, "clicks"); str(row.optin_status, "optin_status");
+    }
+    return { rowIndex: index, data, errors };
+  }
+
+  function parseCSV(text: string): ParsedRow[] {
+    const lines = parseCSVLines(text); if (lines.length < 2) return [];
+    const headers = lines[0].map((h) => h.toLowerCase().trim().replace(/\s+/g, "_").replace(/[()]/g, "").replace(/_\(.*\)/g, ""));
+    const map: Record<string, string> = {};
+    for (const h of headers) {
+      // Match common variants
+      if (h === "email" || h === "e_mail") map[h] = "email";
+      else if (h === "name" || h === "contact_name") map[h] = "name";
+      else if (h === "company" || h === "company_name") map[h] = "company";
+      else if (h === "designation") map[h] = "designation";
+      else if (h === "phone" || h === "phone_number") map[h] = "phone";
+      else if (h === "city") map[h] = "city";
+      else if (h === "sector") map[h] = "sector";
+      else if (h === "source") map[h] = "source";
+      else if (h === "tags" || h === "tag") map[h] = "tags";
+      else if (h === "opt-in" || h === "opt_in" || h === "opt-in_status" || h === "optin_status" || h === "optin") map[h] = "optin_status";
+      else if (h === "remarks") map[h] = "remarks";
+      else if (h === "mailer_id" || h === "mailer") map[h] = "mailer_id";
+      else if (h === "opens" || h === "open_count") map[h] = "opens";
+      else if (h === "clicks" || h === "click_count") map[h] = "clicks";
+      else if (h === "total_mails_sent") map[h] = "_skip"; // skip this column
+      else map[h] = h;
+    }
+    const result: ParsedRow[] = [];
+    for (let i = 1; i < lines.length; i++) {
+      const values = lines[i]; const row: Record<string, string> = {}; let hasData = false;
+      headers.forEach((h, idx) => { const key = map[h] || h; if (key === "_skip") return; row[key] = values[idx] || ""; if (values[idx]?.trim()) hasData = true; });
+      if (hasData) result.push(validateRow(i, row));
+    }
+    return result;
+  }
+
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]; if (!file) return; setFileName(file.name);
     const reader = new FileReader(); reader.onload = (ev) => { const text = ev.target?.result as string; setParsedRows(parseCSV(text)); setStep("preview"); };
@@ -91,11 +117,11 @@ export default function CSVUploadModal({ onClose, onUpload }: Props) {
     const valid = parsedRows.filter((r) => r.errors.length === 0); if (valid.length === 0) { setUploadError("No valid rows."); return; }
     setUploading(true); setUploadError("");
     try {
-      const res = await fetch("/api/contacts/bulk", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ rows: valid.map((r) => r.data) }) });
+      const endpoint = isMain ? "/api/main-contacts/bulk" : "/api/contacts/bulk";
+      const res = await fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ rows: valid.map((r) => r.data) }) });
       const d = await res.json(); if (!res.ok) throw new Error(d.error || "Upload failed");
-      const ins = d.inserted ?? 0, upd = d.updated ?? 0, skp = d.skipped ?? 0, dup = d.intraCsvDuplicates ?? 0, tot = d.total ?? 0;
-      const parts: string[] = []; if (ins) parts.push(`${ins} new`); if (upd) parts.push(`${upd} updated`); if (skp) parts.push(`${skp} exact dup`); if (dup) parts.push(`${dup} intra-CSV dup`);
-      alert(`Upload complete: ${parts.join(", ") || tot + " rows"} out of ${tot}.`);
+      const ins = d.inserted ?? d.upserted ?? 0, tot = d.total ?? 0;
+      alert(`Upload complete: ${ins} row${ins !== 1 ? "s" : ""} processed out of ${tot}.`);
       onUpload(); onClose();
     } catch (err) { setUploadError(err instanceof Error ? err.message : "Upload failed"); }
     finally { setUploading(false); }
@@ -108,10 +134,8 @@ export default function CSVUploadModal({ onClose, onUpload }: Props) {
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
       <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden mx-2 sm:mx-auto">
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
-          <h2 className="text-base font-semibold text-gray-800">{step === "upload" ? "Bulk Upload Contacts — CSV" : `Preview — ${fileName}`}</h2>
-          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-          </button>
+          <h2 className="text-base font-semibold text-gray-800">{step === "upload" ? `Bulk Upload ${isMain ? "Main Database" : "Contacts"} — CSV` : `Preview — ${fileName}`}</h2>
+          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
         </div>
         {step === "upload" ? (
           <div className="flex-1 overflow-hidden flex flex-col">
@@ -124,7 +148,7 @@ export default function CSVUploadModal({ onClose, onUpload }: Props) {
               </div>
               <button onClick={downloadTemplate} className="px-5 py-2.5 text-sm border border-gray-200 hover:bg-gray-50 rounded-lg transition-colors flex items-center gap-2"><svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>Download CSV Template</button>
             </div>
-            <div className="px-6 py-4 border-t border-gray-100 bg-gray-50"><p className="text-xs text-gray-400">Template: Email, Mailer ID, Opens (int), Clicks (int), Opt-in Status (Subscribed / Hard Bounced / Unsubscribed). Identity fields (name/company/designation/phone) are managed in the Main Database tab.</p></div>
+            <div className="px-6 py-4 border-t border-gray-100 bg-gray-50"><p className="text-xs text-gray-400">{isMain ? "Template: Email, Name, Company, Designation, Phone, City, Sector (comma-sep), Source (comma-sep), Tags (comma-sep), Opt-in Status, Remarks" : "Template: Email, Mailer ID, Opens, Clicks, Opt-in Status"}</p></div>
           </div>
         ) : (
           <div className="flex-1 overflow-hidden flex flex-col">
@@ -144,7 +168,7 @@ export default function CSVUploadModal({ onClose, onUpload }: Props) {
             </div>
             <div className="flex items-center justify-between px-6 py-4 border-t border-gray-200 bg-gray-50">
               <button onClick={() => { setStep("upload"); setParsedRows([]); }} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors">← Choose different file</button>
-              <div className="flex gap-3"><button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors">Cancel</button><button onClick={handleUpload} disabled={uploading || validCount === 0} className="px-5 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50">{uploading ? `Uploading...` : `Upload ${validCount} Row${validCount !== 1 ? "s" : ""}`}</button></div>
+              <div className="flex gap-3"><button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors">Cancel</button><button onClick={handleUpload} disabled={uploading || validCount === 0} className="px-5 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50">{uploading ? "Uploading..." : `Upload ${validCount} Row${validCount !== 1 ? "s" : ""}`}</button></div>
             </div>
           </div>
         )}

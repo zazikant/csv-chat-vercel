@@ -21,7 +21,10 @@ export default function MainEditModal({ record, mode, onClose, onSave }: Props) 
   const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
-    setForm(mode === "edit" && record ? { ...record } : { optin_status: "Subscribed", tags: [], sector: [], source: [] });
+    setForm(mode === "edit" && record
+      ? { ...record, tags: record.tags || [], sector: record.sector || [], source: record.source || [] }
+      : { optin_status: "Subscribed", tags: [], sector: [], source: [] }
+    );
     setError("");
   }, [record, mode]);
 
@@ -39,37 +42,45 @@ export default function MainEditModal({ record, mode, onClose, onSave }: Props) 
     if (!form.email) { setError("Email is required."); return; }
     setSaving(true); setError("");
     try {
+      // In edit mode, send ALL fields from the form (which was initialized from
+      // the record). This replaces the row entirely with the form's current state.
+      // The form preserves unchanged fields because it was initialized with {...record}.
       const payload: Record<string, unknown> = {};
-      // Only include fields that have actual values (merge semantics —
-      // don't send null/undefined/empty, which would overwrite existing data)
       for (const [k, v] of Object.entries(form)) {
-        if (k === "email") continue; // email is PK, handled separately
         if (k === "created_at" || k === "updated_at") continue;
-        // Include arrays even if empty (tags/sector/source)
+        // Always include arrays (tags/sector/source) — even empty ones
         if (k === "tags" || k === "sector" || k === "source") {
           payload[k] = Array.isArray(v) ? v : [];
           continue;
         }
-        // Include non-empty strings
-        if (v !== null && v !== undefined && v !== "") {
-          payload[k] = v;
-        }
-        // Include optin_status even if default
-        if (k === "optin_status" && v) {
+        // Include all other non-null values
+        if (v !== null && v !== undefined) {
           payload[k] = v;
         }
       }
+
+      // For edit mode: if email changed, we need to update by old email (the PK)
+      // and include the new email in the payload
       if (mode === "edit") {
-        payload.email = record!.email;
+        const oldEmail = record!.email;
+        const newEmail = String(form.email).trim().toLowerCase();
+        payload.email = newEmail;
+        const res = await fetch("/api/main-contacts", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: oldEmail, ...payload }),
+        });
+        if (!res.ok) { const d = await res.json(); throw new Error(d.error || "Save failed"); }
       } else {
-        payload.email = form.email;
+        // Add mode: POST with new email
+        payload.email = String(form.email).trim().toLowerCase();
+        const res = await fetch("/api/main-contacts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) { const d = await res.json(); throw new Error(d.error || "Save failed"); }
       }
-      const res = await fetch("/api/main-contacts", {
-        method: mode === "edit" ? "PUT" : "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) { const d = await res.json(); throw new Error(d.error || "Save failed"); }
       onSave(); onClose();
     } catch (err) { setError(err instanceof Error ? err.message : "Save failed"); }
     finally { setSaving(false); }
@@ -92,7 +103,7 @@ export default function MainEditModal({ record, mode, onClose, onSave }: Props) 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">{children}</div>
     </div>
   );
-  const field = (key: keyof MainContactRow, label: string, placeholder?: string, disabled = false) => (
+  const field = (key: keyof MainContactRow, label: string, placeholder?: string) => (
     <div key={key}>
       <label className="block text-xs font-medium text-gray-500 mb-1.5">{label}</label>
       <FieldSuggest column={key} value={(form[key] as string) || ""} onChange={(v) => setVal(key, v as never)} placeholder={placeholder} className="w-full" />
@@ -112,7 +123,8 @@ export default function MainEditModal({ record, mode, onClose, onSave }: Props) 
           {section("Identity", <>
             <div>
               <label className="block text-xs font-medium text-gray-500 mb-1.5">Email *</label>
-              <input type="email" value={(form.email as string) || ""} disabled={mode === "edit"} onChange={(e) => setVal("email", e.target.value)} className="w-full px-3 py-2 text-sm text-gray-900 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300 placeholder-gray-500 disabled:bg-gray-50 disabled:text-gray-400" placeholder="e.g. rajesh@company.com" />
+              <input type="email" value={(form.email as string) || ""} onChange={(e) => setVal("email", e.target.value as never)} className="w-full px-3 py-2 text-sm text-gray-900 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300 placeholder-gray-500" placeholder="e.g. rajesh@company.com" />
+              {mode === "edit" && <p className="text-[11px] text-gray-400 mt-1">Changing email updates the primary key and cascades to engagement rows.</p>}
             </div>
             {field("name", "Name", "e.g. Rajesh Kumar")}
           </>)}

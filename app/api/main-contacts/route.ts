@@ -23,17 +23,14 @@ function normalizeOptinStatus(raw: string | undefined | null): string {
   return "Subscribed";
 }
 
-/** Fetch the actual column names that exist in main_contacts, so we can
- *  strip unknown fields from payloads (graceful handling of schema mismatches
- *  when new columns haven't been added to the DB yet). */
-let cachedColumns: Set<string> | null = null;
+/** Fetch the actual column names that exist in main_contacts. */
 async function getExistingColumns(): Promise<Set<string>> {
-  if (cachedColumns) return cachedColumns;
+  // Don't cache — Vercel serverless instances may have stale cache from
+  // before a schema migration was run. Querying information_schema is fast.
   const { data, error } = await supabase.rpc("run_select_query", {
     query_text: "SELECT column_name FROM information_schema.columns WHERE table_name = 'main_contacts' AND table_schema = 'public'",
   });
   if (error || !data) {
-    // Fallback: assume all known columns exist
     return new Set(["email","name","company","designation","phone","city","sector","tags","source","optin_status","remarks","created_at","updated_at"]);
   }
   let rows = typeof data === "string" ? JSON.parse(data) : data;
@@ -42,7 +39,6 @@ async function getExistingColumns(): Promise<Set<string>> {
   for (const r of (rows as Array<Record<string, string>>) ?? []) {
     if (r?.column_name) cols.add(r.column_name);
   }
-  cachedColumns = cols;
   return cols;
 }
 
@@ -113,10 +109,13 @@ export async function POST(req: NextRequest) {
 
 export async function PUT(req: NextRequest) {
   const body = await req.json();
-  const { email, ...fields } = body;
-  if (!email) return NextResponse.json({ error: "email is required" }, { status: 400 });
+  // The body includes both the old email (as `email`) and the new email
+  // (as `email` in the fields, which may differ from the lookup key).
+  // We use `email` as the lookup key (old PK) and update all other fields.
+  const { email: lookupEmail, ...fields } = body;
+  if (!lookupEmail) return NextResponse.json({ error: "email is required" }, { status: 400 });
 
-  for (const f of ["email", "created_at", "updated_at"]) delete fields[f];
+  for (const f of ["created_at", "updated_at"]) delete fields[f];
 
   // Normalize array fields
   if (fields.tags !== undefined) fields.tags = normalizeArray(fields.tags);
@@ -127,10 +126,15 @@ export async function PUT(req: NextRequest) {
   // Strip fields that don't exist in the DB
   const cleanFields = await stripUnknownFields(fields);
 
+  // If email is being changed, we need to update it (it's the PK)
+  // Supabase .update() with .eq('email', oldEmail) will update the PK too
+  // if 'email' is in the fields. The FK cascade on contacts.email will
+  // automatically update the engagement rows.
+
   let { data, error } = await supabase
     .from("main_contacts")
     .update(cleanFields)
-    .eq("email", String(email).toLowerCase())
+    .eq("email", String(lookupEmail).toLowerCase())
     .select()
     .single();
 
@@ -142,7 +146,7 @@ export async function PUT(req: NextRequest) {
     const retry = await supabase
       .from("main_contacts")
       .update(cleanFields)
-      .eq("email", String(email).toLowerCase())
+      .eq("email", String(lookupEmail).toLowerCase())
       .select()
       .single();
     data = retry.data;
