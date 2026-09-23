@@ -32,13 +32,16 @@ Columns:
 Common queries:
   Show all: SELECT * FROM main_contacts ORDER BY email;
   By city: SELECT * FROM main_contacts WHERE city ILIKE '%mumbai%';
-  By tag: SELECT * FROM main_contacts WHERE 'vip' = ANY(tags);
-  By sector: SELECT * FROM main_contacts WHERE 'real estate' = ANY(sector);
-  By source: SELECT * FROM main_contacts WHERE 'linkedin' = ANY(source);
+  By tag (exact): SELECT * FROM main_contacts WHERE 'vip' = ANY(tags);
+  By tag (partial match): SELECT * FROM main_contacts WHERE EXISTS (SELECT 1 FROM unnest(tags) AS t WHERE t ILIKE '%structural%');
+  By sector (exact): SELECT * FROM main_contacts WHERE 'real estate' = ANY(sector);
+  By sector (partial match): SELECT * FROM main_contacts WHERE EXISTS (SELECT 1 FROM unnest(sector) AS s WHERE s ILIKE '%real%');
+  By source: SELECT * FROM main_contacts WHERE EXISTS (SELECT 1 FROM unnest(source) AS s WHERE s ILIKE '%link%');
   Unsubscribed: SELECT * FROM main_contacts WHERE optin_status = 'Unsubscribed';
   Hard bounced: SELECT * FROM main_contacts WHERE optin_status = 'Hard Bounced';
+  By email: SELECT * FROM main_contacts WHERE email ILIKE '%rajmohan%';
 
-RULES: ALWAYS use SELECT *. Use ILIKE for text. For tags/sector/source use WHERE 'x' = ANY(col). End with semicolon.
+RULES: ALWAYS use SELECT *. Use ILIKE for text matches. For tags/sector/source, use EXISTS + unnest + ILIKE for partial matches (e.g. searching 'structural' should match 'structural audit gujarat'). End with semicolon.
 `.trim();
   }
 
