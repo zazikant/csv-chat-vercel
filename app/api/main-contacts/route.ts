@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 
-function normalizeTags(tags: unknown): string[] {
-  if (!Array.isArray(tags)) return [];
+/** Normalize a text[] field — accepts string, string[], or null. */
+function normalizeArray(val: unknown): string[] {
+  if (!Array.isArray(val)) return [];
   const seen = new Set<string>();
   const out: string[] = [];
-  for (const t of tags) {
+  for (const t of val) {
     if (typeof t !== "string") continue;
     const tag = t.trim().toLowerCase();
     if (!tag || seen.has(tag)) continue;
@@ -22,6 +23,40 @@ function normalizeOptinStatus(raw: string | undefined | null): string {
   return "Subscribed";
 }
 
+/** Fetch the actual column names that exist in main_contacts, so we can
+ *  strip unknown fields from payloads (graceful handling of schema mismatches
+ *  when new columns haven't been added to the DB yet). */
+let cachedColumns: Set<string> | null = null;
+async function getExistingColumns(): Promise<Set<string>> {
+  if (cachedColumns) return cachedColumns;
+  const { data, error } = await supabase.rpc("run_select_query", {
+    query_text: "SELECT column_name FROM information_schema.columns WHERE table_name = 'main_contacts' AND table_schema = 'public'",
+  });
+  if (error || !data) {
+    // Fallback: assume all known columns exist
+    return new Set(["email","name","company","designation","phone","city","sector","tags","source","optin_status","remarks","created_at","updated_at"]);
+  }
+  let rows = typeof data === "string" ? JSON.parse(data) : data;
+  if (rows && typeof rows === "object" && !Array.isArray(rows)) rows = Object.values(rows)[0];
+  const cols = new Set<string>();
+  for (const r of (rows as Array<Record<string, string>>) ?? []) {
+    if (r?.column_name) cols.add(r.column_name);
+  }
+  cachedColumns = cols;
+  return cols;
+}
+
+/** Strip fields from the payload that don't exist in the DB (silently skip
+ *  so the app works even before the schema migration is run). */
+async function stripUnknownFields(obj: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const cols = await getExistingColumns();
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (cols.has(k)) out[k] = v;
+  }
+  return out;
+}
+
 export async function GET() {
   const { data, error } = await supabase
     .from("main_contacts")
@@ -35,16 +70,43 @@ export async function POST(req: NextRequest) {
   const body = await req.json();
   if (!body?.email) return NextResponse.json({ error: "email is required" }, { status: 400 });
   body.email = String(body.email).trim().toLowerCase();
-  body.tags = normalizeTags(body.tags);
-  body.sector = normalizeTags(body.sector);
-  body.source = normalizeTags(body.source);
+
+  // Normalize array fields — but handle sector specially:
+  // If the DB column is text (not text[]), convert array to comma-separated string.
+  const cols = await getExistingColumns();
+  // Check if sector is text or text[] by trying to insert an array
+  // For now, just send the array and let Supabase handle it.
+  // If sector column is text, Supabase will reject array — we catch and retry.
+  if (body.tags !== undefined) body.tags = normalizeArray(body.tags);
+  if (body.sector !== undefined) body.sector = normalizeArray(body.sector);
+  if (body.source !== undefined) body.source = normalizeArray(body.source);
   if (body.optin_status !== undefined) body.optin_status = normalizeOptinStatus(body.optin_status);
+
   for (const f of ["created_at", "updated_at"]) delete body[f];
-  const { data, error } = await supabase
+
+  // Strip fields that don't exist in the DB yet (graceful schema mismatch)
+  const cleanBody = await stripUnknownFields(body);
+
+  let { data, error } = await supabase
     .from("main_contacts")
-    .upsert(body, { onConflict: "email" })
+    .upsert(cleanBody, { onConflict: "email" })
     .select()
     .single();
+
+  // If sector failed because column is text not text[], retry with string
+  if (error && error.message.includes("sector") && cleanBody.sector !== undefined) {
+    cleanBody.sector = Array.isArray(cleanBody.sector) && cleanBody.sector.length > 0
+      ? (cleanBody.sector as string[]).join(", ")
+      : null;
+    const retry = await supabase
+      .from("main_contacts")
+      .upsert(cleanBody, { onConflict: "email" })
+      .select()
+      .single();
+    data = retry.data;
+    error = retry.error;
+  }
+
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json(data, { status: 201 });
 }
@@ -53,17 +115,40 @@ export async function PUT(req: NextRequest) {
   const body = await req.json();
   const { email, ...fields } = body;
   if (!email) return NextResponse.json({ error: "email is required" }, { status: 400 });
+
   for (const f of ["email", "created_at", "updated_at"]) delete fields[f];
-  if ("tags" in fields) fields.tags = normalizeTags(fields.tags);
-  if ("sector" in fields) fields.sector = normalizeTags(fields.sector);
-  if ("source" in fields) fields.source = normalizeTags(fields.source);
+
+  // Normalize array fields
+  if (fields.tags !== undefined) fields.tags = normalizeArray(fields.tags);
+  if (fields.sector !== undefined) fields.sector = normalizeArray(fields.sector);
+  if (fields.source !== undefined) fields.source = normalizeArray(fields.source);
   if (fields.optin_status !== undefined) fields.optin_status = normalizeOptinStatus(fields.optin_status);
-  const { data, error } = await supabase
+
+  // Strip fields that don't exist in the DB
+  const cleanFields = await stripUnknownFields(fields);
+
+  let { data, error } = await supabase
     .from("main_contacts")
-    .update(fields)
+    .update(cleanFields)
     .eq("email", String(email).toLowerCase())
     .select()
     .single();
+
+  // If sector failed because column is text not text[], retry with string
+  if (error && error.message.includes("sector") && cleanFields.sector !== undefined) {
+    cleanFields.sector = Array.isArray(cleanFields.sector) && cleanFields.sector.length > 0
+      ? (cleanFields.sector as string[]).join(", ")
+      : null;
+    const retry = await supabase
+      .from("main_contacts")
+      .update(cleanFields)
+      .eq("email", String(email).toLowerCase())
+      .select()
+      .single();
+    data = retry.data;
+    error = retry.error;
+  }
+
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json(data);
 }

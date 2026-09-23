@@ -39,13 +39,31 @@ export default function MainEditModal({ record, mode, onClose, onSave }: Props) 
     if (!form.email) { setError("Email is required."); return; }
     setSaving(true); setError("");
     try {
-      const payload: Record<string, unknown> = { ...form };
-      delete payload.created_at; delete payload.updated_at;
-      if (mode === "edit") payload.email = record!.email;
-      payload.tags = Array.isArray(payload.tags) ? payload.tags : [];
-      payload.sector = Array.isArray(payload.sector) ? payload.sector : [];
-      payload.source = Array.isArray(payload.source) ? payload.source : [];
-      if (!payload.remarks) delete payload.remarks;
+      const payload: Record<string, unknown> = {};
+      // Only include fields that have actual values (merge semantics —
+      // don't send null/undefined/empty, which would overwrite existing data)
+      for (const [k, v] of Object.entries(form)) {
+        if (k === "email") continue; // email is PK, handled separately
+        if (k === "created_at" || k === "updated_at") continue;
+        // Include arrays even if empty (tags/sector/source)
+        if (k === "tags" || k === "sector" || k === "source") {
+          payload[k] = Array.isArray(v) ? v : [];
+          continue;
+        }
+        // Include non-empty strings
+        if (v !== null && v !== undefined && v !== "") {
+          payload[k] = v;
+        }
+        // Include optin_status even if default
+        if (k === "optin_status" && v) {
+          payload[k] = v;
+        }
+      }
+      if (mode === "edit") {
+        payload.email = record!.email;
+      } else {
+        payload.email = form.email;
+      }
       const res = await fetch("/api/main-contacts", {
         method: mode === "edit" ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
