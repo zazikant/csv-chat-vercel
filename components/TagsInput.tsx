@@ -7,16 +7,17 @@ interface Props {
   onChange: (tags: string[]) => void;
   placeholder?: string;
   className?: string;
+  /** API endpoint to fetch suggestions from. Default: /api/tags */
+  suggestionsEndpoint?: string;
 }
 
-interface TagCount { tag: string; count: number }
+interface SuggestionItem { tag: string; count: number }
 
 /**
  * TagsInput - free-form chip input with smart suggestions.
  *
- * Fetches all distinct tags from /api/tags (with usage counts) and shows
- * a smart-suggestion dropdown as the user types. The bulb icon (matching
- * the FieldSuggest component pattern) toggles the suggestion list.
+ * Fetches all distinct values from the specified endpoint (with usage counts)
+ * and shows a smart-suggestion dropdown as the user types.
  *
  * Behavior:
  * - Type a tag, press Enter or comma to add it.
@@ -25,30 +26,38 @@ interface TagCount { tag: string; count: number }
  * - Backspace on an empty input removes the last tag.
  * - Click the × on a chip to remove it.
  */
-export default function TagsInput({ value, onChange, placeholder, className = "" }: Props) {
+export default function TagsInput({ value, onChange, placeholder, className = "", suggestionsEndpoint = "/api/tags" }: Props) {
   const [input, setInput] = useState("");
-  const [allTags, setAllTags] = useState<TagCount[]>([]);
+  const [allSuggestions, setAllSuggestions] = useState<SuggestionItem[]>([]);
   const [showDropdown, setShowDropdown] = useState(false);
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Fetch all existing tags (for suggestions)
+  // Fetch all existing values (for suggestions)
   useEffect(() => {
-    fetch("/api/tags")
+    fetch(suggestionsEndpoint)
       .then((r) => r.json())
       .then((d) => {
-        if (Array.isArray(d)) setAllTags(d as TagCount[]);
+        if (Array.isArray(d)) {
+          // Handle different response shapes: /api/tags returns {tag, count},
+          // /api/sectors returns {sector, count}, /api/sources returns {source, count}
+          const normalized = d.map((item: Record<string, unknown>) => ({
+            tag: String(item.tag || item.sector || item.source || ""),
+            count: Number(item.count) || 0,
+          })).filter((item: SuggestionItem) => item.tag);
+          setAllSuggestions(normalized);
+        }
       })
-      .catch(() => setAllTags([]));
-  }, []);
+      .catch(() => setAllSuggestions([]));
+  }, [suggestionsEndpoint]);
 
-  // Filtered suggestions: tags that start with the current input AND aren't already added
+  // Filtered suggestions: values that start with the current input AND aren't already added
   const loweredInput = input.trim().toLowerCase();
   const suggestions = loweredInput
-    ? allTags.filter((t) => t.tag.startsWith(loweredInput) && !value.includes(t.tag)).slice(0, 20)
-    : allTags.filter((t) => !value.includes(t.tag)).slice(0, 20);
+    ? allSuggestions.filter((t) => t.tag.startsWith(loweredInput) && !value.includes(t.tag)).slice(0, 20)
+    : allSuggestions.filter((t) => !value.includes(t.tag)).slice(0, 20);
 
   function addTag(rawTag: string) {
     const tag = rawTag.trim().toLowerCase();
@@ -71,10 +80,6 @@ export default function TagsInput({ value, onChange, placeholder, className = ""
     if (e.key === "Enter" || e.key === ",") {
       e.preventDefault();
       if (input.trim()) {
-        // Enter always adds whatever the user TYPED (not what's highlighted
-        // in the suggestion dropdown). To pick a suggestion instead, the
-        // user clicks it with the mouse. This makes it predictable: type
-        // a brand-new tag, press Enter, the tag is added.
         addTag(input);
       }
     } else if (e.key === "Backspace" && !input && value.length > 0) {
@@ -131,7 +136,7 @@ export default function TagsInput({ value, onChange, placeholder, className = ""
         <button
           type="button"
           onClick={() => { setShowDropdown((s) => !s); inputRef.current?.focus(); }}
-          title="Show tag suggestions"
+          title="Show suggestions"
           className="flex-shrink-0 w-7 h-7 flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
         >
           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -139,10 +144,10 @@ export default function TagsInput({ value, onChange, placeholder, className = ""
           </svg>
         </button>
       </div>
-      {/* Inline hint: tell the user they can type their own tag */}
+      {/* Inline hint */}
       {input.trim() && !suggestions.some((s) => s.tag === input.trim().toLowerCase()) && (
         <p className="mt-1 text-[11px] text-gray-400">
-          Press <kbd className="px-1 py-0.5 bg-gray-100 rounded text-gray-600">Enter</kbd> to add <strong>&quot;{input.trim()}&quot;</strong> as a new tag
+          Press <kbd className="px-1 py-0.5 bg-gray-100 rounded text-gray-600">Enter</kbd> to add <strong>&quot;{input.trim()}&quot;</strong>
         </p>
       )}
       {show && (

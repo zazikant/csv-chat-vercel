@@ -164,15 +164,15 @@ export default function MainEditModal({ record, mode, onClose, onSave }: Props) 
           {section("Categorization", <>
             <div>
               <label className="block text-xs font-medium text-gray-500 mb-1.5">Sector</label>
-              <TagsInput value={Array.isArray(form.sector) ? form.sector : []} onChange={(v) => setVal("sector", v as never)} placeholder="e.g. Real Estate, Infrastructure" className="w-full" />
+              <TagsInput value={Array.isArray(form.sector) ? form.sector : []} onChange={(v) => setVal("sector", v as never)} placeholder="e.g. Real Estate, Infrastructure" className="w-full" suggestionsEndpoint="/api/sectors" />
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-500 mb-1.5">Source</label>
-              <TagsInput value={Array.isArray(form.source) ? form.source : []} onChange={(v) => setVal("source", v as never)} placeholder="e.g. LinkedIn, Referral" className="w-full" />
+              <TagsInput value={Array.isArray(form.source) ? form.source : []} onChange={(v) => setVal("source", v as never)} placeholder="e.g. LinkedIn, Referral" className="w-full" suggestionsEndpoint="/api/sources" />
             </div>
             <div className="col-span-1 sm:col-span-2">
               <label className="block text-xs font-medium text-gray-500 mb-1.5">Tags</label>
-              <TagsInput value={Array.isArray(form.tags) ? form.tags : []} onChange={(v) => setVal("tags", v as never)} placeholder="e.g. vip, mumbai" className="w-full" />
+              <TagsInput value={Array.isArray(form.tags) ? form.tags : []} onChange={(v) => setVal("tags", v as never)} placeholder="e.g. vip, mumbai" className="w-full" suggestionsEndpoint="/api/tags" />
             </div>
           </>)}
           {section("Remarks", <>
