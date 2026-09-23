@@ -81,24 +81,24 @@ export async function POST(req: NextRequest) {
       merged[k] = v;
     }
 
-    const { data, error } = await supabase
+    const { data: updateData, error: updateError } = await supabase
       .from("main_contacts")
       .update(merged)
       .eq("email", body.email)
-      .select()
-      .single();
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    return NextResponse.json(data, { status: 200 });
+      .select();
+    if (updateError) return NextResponse.json({ error: updateError.message }, { status: 500 });
+    const updateResult = Array.isArray(updateData) && updateData.length > 0 ? updateData[0] : updateData;
+    return NextResponse.json(updateResult, { status: 200 });
   }
 
   // Email doesn't exist — INSERT new record
-  const { data, error } = await supabase
+  const { data: insertData, error: insertError } = await supabase
     .from("main_contacts")
     .insert(body)
-    .select()
-    .single();
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json(data, { status: 201 });
+    .select();
+  if (insertError) return NextResponse.json({ error: insertError.message }, { status: 500 });
+  const insertResult = Array.isArray(insertData) && insertData.length > 0 ? insertData[0] : insertData;
+  return NextResponse.json(insertResult, { status: 201 });
 }
 
 export async function PUT(req: NextRequest) {
@@ -172,15 +172,15 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ error: "Record not found" }, { status: 404 });
   }
 
-  const { data, error } = await supabase
+  const { data: putData, error: putError } = await supabase
     .from("main_contacts")
     .update(mergedFields)
     .eq("email", String(lookupEmail).toLowerCase())
-    .select()
-    .single();
+    .select();
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json(data);
+  if (putError) return NextResponse.json({ error: putError.message }, { status: 500 });
+  const putResult = Array.isArray(putData) && putData.length > 0 ? putData[0] : putData;
+  return NextResponse.json(putResult);
 }
 
 export async function DELETE(req: NextRequest) {
