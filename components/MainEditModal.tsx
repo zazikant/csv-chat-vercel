@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { MainContactRow } from "@/lib/langgraph/state";
 import FieldSuggest from "./FieldSuggest";
 import TagsInput from "./TagsInput";
@@ -19,14 +19,33 @@ export default function MainEditModal({ record, mode, onClose, onSave }: Props) 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [deleting, setDeleting] = useState(false);
+  // Use a ref to prevent the useEffect from re-initializing the form
+  // after the user has started editing (e.g. when a parent re-render
+  // passes a new `record` object reference).
+  const initializedRef = useRef(false);
 
   useEffect(() => {
-    setForm(mode === "edit" && record
-      ? { ...record, tags: record.tags || [], sector: record.sector || [], source: record.source || [] }
-      : { optin_status: "Subscribed", tags: [], sector: [], source: [] }
-    );
+    // Only initialize the form ONCE when the modal opens.
+    // After that, the form state is managed by the user's edits.
+    if (initializedRef.current) return;
+    initializedRef.current = true;
+
+    const initial = mode === "edit" && record
+      ? {
+          ...record,
+          tags: Array.isArray(record.tags) ? record.tags : [],
+          sector: Array.isArray(record.sector) ? record.sector : [],
+          source: Array.isArray(record.source) ? record.source : [],
+        }
+      : { optin_status: "Subscribed", tags: [], sector: [], source: [] };
+    setForm(initial);
     setError("");
   }, [record, mode]);
+
+  // Reset the initialized ref when the modal closes
+  useEffect(() => {
+    return () => { initializedRef.current = false; };
+  }, []);
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
