@@ -29,6 +29,7 @@ Columns:
   - assigned_to   text[]       Assigned to (tag-style). e.g. {rajesh, sales team}
   - optin_status   text        "Subscribed" | "Hard Bounced" | "Unsubscribed"
   - remarks       text        Free-text notes
+  - location      text        Location (plain text). e.g. "Mumbai, Maharashtra"
 
 Common queries:
   Show all: SELECT * FROM main_contacts ORDER BY email;

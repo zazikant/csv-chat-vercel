@@ -28,6 +28,7 @@ export interface MainContactRow {
   assigned_to: string[];
   optin_status: string | null;
   remarks: string | null;
+  location: string | null;
 }
 
 // ---- contacts (engagement — multiple rows per email, one per mailer) -------

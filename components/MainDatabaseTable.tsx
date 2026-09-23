@@ -16,17 +16,18 @@ const ALL_COLUMNS: { key: keyof MainContactRow; label: string }[] = [
   { key: "tags",        label: "Tags" },
   { key: "optin_status", label: "Opt-in" },
   { key: "remarks",     label: "Remarks" },
+  { key: "location",    label: "Location" },
 ];
 
 const VISIBLE_COLUMNS: (keyof MainContactRow)[] = [
   "name", "company", "designation", "email", "phone",
-  "city", "sector", "source", "assigned_to", "tags", "optin_status", "remarks",
+  "city", "sector", "source", "assigned_to", "tags", "optin_status", "remarks", "location",
 ];
 
 const TOTAL_MAILS_SENT_KEY = "_total_mails_sent" as keyof MainContactRow;
 const PAGE_SIZE = 25;
 const SEARCHABLE_COLUMNS: (keyof MainContactRow)[] = [
-  "name", "company", "designation", "email", "phone", "city", "remarks", "optin_status",
+  "name", "company", "designation", "email", "phone", "city", "remarks", "optin_status", "location",
 ];
 
 interface Filters {
@@ -136,7 +137,7 @@ export default function MainDatabaseTable({
     const val = row[key];
     if (val === null || val === undefined) return "—";
     if (key === "tags" || key === "sector" || key === "source" || key === "assigned_to") return renderChips(val);
-    if (key === "remarks") { const s = String(val); return s.length > 40 ? s.slice(0, 40) + "…" : s; }
+    if (key === "remarks" || key === "location") { const s = String(val); return s.length > 40 ? s.slice(0, 40) + "…" : s; }
     return String(val);
   }
 
@@ -151,7 +152,7 @@ export default function MainDatabaseTable({
       if (s === "Unsubscribed") return "text-red-500";
       if (s === "Hard Bounced") return "text-orange-600";
     }
-    if (key === "remarks") return "text-gray-500 text-xs";
+    if (key === "remarks" || key === "location") return "text-gray-500 text-xs";
     return "text-gray-700";
   }
 

@@ -154,10 +154,14 @@ export default function MainEditModal({ record, mode, onClose, onSave }: Props) 
               <TagsInput value={Array.isArray(form.tags) ? form.tags : []} onChange={(v) => setVal("tags", v as never)} placeholder="e.g. vip, mumbai" className="w-full" suggestionsEndpoint="/api/tags" />
             </div>
           </>)}
-          {section("Remarks", <>
+          {section("Remarks & Location", <>
             <div className="col-span-1 sm:col-span-2">
               <label className="block text-xs font-medium text-gray-500 mb-1.5">Remarks</label>
               <textarea value={(form.remarks as string) || ""} onChange={(e) => setVal("remarks", e.target.value as never)} rows={3} placeholder="Free-text notes..." className="w-full px-3 py-2 text-sm text-gray-900 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300 resize-none placeholder-gray-500" />
+            </div>
+            <div className="col-span-1 sm:col-span-2">
+              <label className="block text-xs font-medium text-gray-500 mb-1.5">Location</label>
+              <input type="text" value={(form.location as string) || ""} onChange={(e) => setVal("location", e.target.value as never)} className="w-full px-3 py-2 text-sm text-gray-900 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300 placeholder-gray-500" placeholder="e.g. Mumbai, Maharashtra, India" />
             </div>
           </>)}
         </div>
