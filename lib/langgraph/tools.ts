@@ -9,6 +9,10 @@ export function getTableSchema(activeTab?: string): string {
 You are querying the "Main Database" tab — the master contact list (identity data).
 Focus your answers on the main_contacts table.
 
+IMPORTANT: This table has identity data (name, company, tags, sector, source, remarks, optin_status).
+It does NOT have mailer_id, opens, clicks, or engagement_score. Those are in the contacts table.
+If the user asks about opens/clicks/mailers/engagement, tell them to switch to the Contacts tab.
+
 TABLE: main_contacts (1 row per email — identity data)
 Primary key: email (text, lowercase)
 
@@ -43,6 +47,10 @@ RULES: ALWAYS use SELECT *. Use ILIKE for text. For tags/sector/source use WHERE
 You are querying the "Contacts" tab — engagement data (opens/clicks per mailer).
 Focus your answers on the contacts table.
 
+IMPORTANT: This table does NOT have name, company, tags, sector, source, or remarks columns.
+Those fields live in the main_contacts table. If the user asks about tags, sector, source,
+name, or company, tell them to switch to the Main Database tab.
+
 TABLE: contacts (multiple rows per email — one per mailer)
 Primary key: id (bigserial). Unique: (email, mailer_id)
 
@@ -60,8 +68,9 @@ Common queries:
   HOT contacts: SELECT * FROM contacts WHERE engagement_score = 'HOT';
   In M001: SELECT * FROM contacts WHERE mailer_id = 'M001';
   Unsubscribed: SELECT * FROM contacts WHERE optin_status = 'Unsubscribed';
+  By email: SELECT * FROM contacts WHERE email ILIKE '%rajmohan%';
 
-RULES: ALWAYS use SELECT *. End with semicolon.
+RULES: ALWAYS use SELECT *. End with semicolon. If the user asks about tags/sector/source/name/company, say "That data is in the Main Database tab. Please switch to that tab to search by tags/sector/name."
 `.trim();
   }
 
