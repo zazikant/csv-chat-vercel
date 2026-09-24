@@ -14,8 +14,10 @@ interface CleanedRow {
   sector: string[];
   tags: string[];
   source: string[];
+  assigned_to: string[];
   optin_status: string;
   remarks: string | null;
+  location: string | null;
   // created_date is intentionally OMITTED from upsert payload so that:
   //   - For NEW rows: the DB DEFAULT CURRENT_DATE kicks in.
   //   - For EXISTING rows: upsert only updates the columns above, leaving
@@ -70,8 +72,10 @@ export async function POST(req: NextRequest) {
       sector: normalizeArray(r.sector),
       tags: normalizeArray(r.tags),
       source: normalizeArray(r.source),
+      assigned_to: normalizeArray(r.assigned_to),
       optin_status: normalizeOptinStatus(r.optin_status ? String(r.optin_status).trim() : "Subscribed"),
       remarks: r.remarks ? String(r.remarks).trim() : null,
+      location: r.location ? String(r.location).trim() : null,
     });
   }
 

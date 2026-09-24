@@ -6,8 +6,8 @@ import { normalizePhone } from "@/lib/normalizePhone";
 const CONTACTS_HEADERS = ["email", "mailer_id", "opens", "clicks", "optin_status"];
 const CONTACTS_LABELS: Record<string, string> = { email: "Email", mailer_id: "Mailer ID", opens: "Opens", clicks: "Clicks", optin_status: "Opt-in Status" };
 
-const MAIN_HEADERS = ["email", "name", "company", "designation", "phone", "city", "sector", "source", "tags", "optin_status", "remarks"];
-const MAIN_LABELS: Record<string, string> = { email: "Email", name: "Name", company: "Company", designation: "Designation", phone: "Phone", city: "City", sector: "Sector (comma-sep)", source: "Source (comma-sep)", tags: "Tags (comma-sep)", optin_status: "Opt-in Status", remarks: "Remarks" };
+const MAIN_HEADERS = ["email", "name", "company", "designation", "phone", "city", "sector", "source", "assigned_to", "tags", "optin_status", "remarks", "location"];
+const MAIN_LABELS: Record<string, string> = { email: "Email", name: "Name", company: "Company", designation: "Designation", phone: "Phone", city: "City", sector: "Sector (comma-sep)", source: "Source (comma-sep)", assigned_to: "Assigned To (comma-sep)", tags: "Tags (comma-sep)", optin_status: "Opt-in Status", remarks: "Remarks", location: "Location" };
 
 interface ParsedRow { rowIndex: number; data: Record<string, unknown>; errors: string[]; }
 interface Props { onClose: () => void; onUpload: () => void; tab: string; }
@@ -33,7 +33,7 @@ export default function CSVUploadModal({ onClose, onUpload, tab }: Props) {
   function downloadTemplate() {
     const headers = TEMPLATE_HEADERS.map((h) => FIELD_LABELS[h]);
     const example = isMain
-      ? ["rajesh@contractor.com", "Rajesh Kumar", "ABC Contractors", "Project Manager", "+91 9876543210", "Mumbai", "Real Estate, Infrastructure", "LinkedIn, Referral", "vip, mumbai", "Subscribed", "Key decision maker"]
+      ? ["rajesh@contractor.com", "Rajesh Kumar", "ABC Contractors", "Project Manager", "+91 9876543210", "Mumbai", "\"Real Estate, Infrastructure\"", "\"LinkedIn, Referral\"", "\"Rajesh, Sales Team\"", "\"vip, mumbai\"", "Subscribed", "Key decision maker", "\"Mumbai, Maharashtra, India\""]
       : ["rajesh@contractor.com", "M001", "3", "1", "Subscribed"];
     const csv = [headers, example].map((r) => r.join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
@@ -72,8 +72,8 @@ export default function CSVUploadModal({ onClose, onUpload, tab }: Props) {
       const phone = normalizePhone(row.phone);
       if (phone) data.phone = phone;
       str(row.city, "city");
-      arr(row.sector, "sector"); arr(row.source, "source"); arr(row.tags, "tags");
-      str(row.optin_status, "optin_status"); str(row.remarks, "remarks");
+      arr(row.sector, "sector"); arr(row.source, "source"); arr(row.assigned_to, "assigned_to"); arr(row.tags, "tags");
+      str(row.optin_status, "optin_status"); str(row.remarks, "remarks"); str(row.location, "location");
     } else {
       str(row.mailer_id, "mailer_id"); num(row.opens, "opens"); num(row.clicks, "clicks"); str(row.optin_status, "optin_status");
     }
@@ -94,9 +94,11 @@ export default function CSVUploadModal({ onClose, onUpload, tab }: Props) {
       else if (h === "city") map[h] = "city";
       else if (h === "sector") map[h] = "sector";
       else if (h === "source") map[h] = "source";
+      else if (h === "assigned_to" || h === "assigned" || h === "assigned-to" || h === "assignee") map[h] = "assigned_to";
       else if (h === "tags" || h === "tag") map[h] = "tags";
       else if (h === "opt-in" || h === "opt_in" || h === "opt-in_status" || h === "optin_status" || h === "optin") map[h] = "optin_status";
       else if (h === "remarks") map[h] = "remarks";
+      else if (h === "location") map[h] = "location";
       else if (h === "mailer_id" || h === "mailer") map[h] = "mailer_id";
       else if (h === "opens" || h === "open_count") map[h] = "opens";
       else if (h === "clicks" || h === "click_count") map[h] = "clicks";
@@ -153,7 +155,7 @@ export default function CSVUploadModal({ onClose, onUpload, tab }: Props) {
               </div>
               <button onClick={downloadTemplate} className="px-5 py-2.5 text-sm border border-gray-200 hover:bg-gray-50 rounded-lg transition-colors flex items-center gap-2"><svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>Download CSV Template</button>
             </div>
-            <div className="px-6 py-4 border-t border-gray-100 bg-gray-50"><p className="text-xs text-gray-400">{isMain ? "Template: Email, Name, Company, Designation, Phone, City, Sector (comma-sep), Source (comma-sep), Tags (comma-sep), Opt-in Status, Remarks" : "Template: Email, Mailer ID, Opens, Clicks, Opt-in Status"}</p></div>
+            <div className="px-6 py-4 border-t border-gray-100 bg-gray-50"><p className="text-xs text-gray-400">{isMain ? "Template: Email, Name, Company, Designation, Phone, City, Sector (comma-sep), Source (comma-sep), Assigned To (comma-sep), Tags (comma-sep), Opt-in Status, Remarks, Location" : "Template: Email, Mailer ID, Opens, Clicks, Opt-in Status"}</p></div>
           </div>
         ) : (
           <div className="flex-1 overflow-hidden flex flex-col">
