@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { MainContactRow } from "@/lib/langgraph/state";
+import { useDebounce } from "@/hooks/useDebounce";
 
 const ALL_COLUMNS: { key: keyof MainContactRow; label: string }[] = [
   { key: "name",        label: "Name" },
@@ -20,16 +21,8 @@ const ALL_COLUMNS: { key: keyof MainContactRow; label: string }[] = [
   { key: "created_date", label: "Created Date" },
 ];
 
-const VISIBLE_COLUMNS: (keyof MainContactRow)[] = [
-  "name", "company", "designation", "email", "phone",
-  "city", "sector", "source", "assigned_to", "tags", "optin_status", "remarks", "location", "created_date",
-];
-
 const TOTAL_MAILS_SENT_KEY = "_total_mails_sent" as keyof MainContactRow;
 const PAGE_SIZE = 25;
-const SEARCHABLE_COLUMNS: (keyof MainContactRow)[] = [
-  "name", "company", "designation", "email", "phone", "city", "remarks", "optin_status", "location", "created_date",
-];
 
 interface Filters {
   optin_status: string;
@@ -42,9 +35,13 @@ interface Filters {
 const EMPTY_FILTERS: Filters = { optin_status: "", city: "", sector: "", source: "", tag: "", assigned_to: "" };
 
 interface Props {
-  rows: MainContactRow[];
+  // Legacy: keep accepting pre-loaded rows (e.g. SQL query result overrides)
+  rows?: MainContactRow[];
   totalMailsSent: Map<string, number>;
   page: number;
+  pageSize?: number;
+  total?: number;
+  loading?: boolean;
   onPageChange: (page: number) => void;
   onReset?: () => void;
   onEdit: (row: MainContactRow) => void;
@@ -67,49 +64,102 @@ function renderChips(val: unknown): React.ReactNode {
   );
 }
 
-export default function MainDatabaseTable({
-  rows, totalMailsSent, page, onPageChange, onReset, onEdit, onAdd, onUpload, onBulkDelete, onDeleteRows,
-}: Props) {
+function formatDate(iso: string): string {
+  const datePart = iso.slice(0, 10);
+  const d = new Date(datePart + "T00:00:00Z");
+  if (isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" });
+}
+
+export default function MainDatabaseTable(props: Props) {
+  const {
+    rows: externalRows,
+    totalMailsSent,
+    page,
+    pageSize = PAGE_SIZE,
+    total: externalTotal,
+    loading: externalLoading,
+    onPageChange,
+    onReset,
+    onEdit,
+    onAdd,
+    onUpload,
+    onBulkDelete,
+    onDeleteRows,
+  } = props;
+
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [searchTerm, setSearchTerm] = useState("");
   const [filters, setFilters] = useState<Filters>({ ...EMPTY_FILTERS });
   const [showFilters, setShowFilters] = useState(false);
 
-  const cityOptions = Array.from(new Set(rows.map((r) => r.city).filter((x): x is string => !!x))).sort();
-  const sectorOptions = Array.from(new Set(rows.flatMap((r) => Array.isArray(r.sector) ? r.sector : []))).sort();
-  const sourceOptions = Array.from(new Set(rows.flatMap((r) => Array.isArray(r.source) ? r.source : []))).sort();
-  const tagOptions = Array.from(new Set(rows.flatMap((r) => Array.isArray(r.tags) ? r.tags : []))).sort();
-  const assignedToOptions = Array.from(new Set(rows.flatMap((r) => Array.isArray(r.assigned_to) ? r.assigned_to : []))).sort();
+  // Server-paginated state (only used when externalRows is NOT provided — i.e.
+  // the parent lets us fetch our own page. When externalRows IS provided,
+  // the parent owns paging and we render them as-is.)
+  const isServerPaged = externalRows === undefined;
+  const [serverRows, setServerRows] = useState<MainContactRow[]>([]);
+  const [serverTotal, setServerTotal] = useState(0);
+  const [serverLoading, setServerLoading] = useState(false);
+  const [serverError, setServerError] = useState<string | null>(null);
+  const [, startTransition] = useTransition();
+
+  const debouncedSearch = useDebounce(searchTerm, 300);
+  const debouncedFilters = useDebounce(filters, 200);
+
+  // Build dropdown option lists from the rows we currently have.
+  const sourceForOptions = isServerPaged ? serverRows : (externalRows ?? []);
+  const cityOptions = Array.from(new Set(sourceForOptions.map((r) => r.city).filter((x): x is string => !!x))).sort();
+  const sectorOptions = Array.from(new Set(sourceForOptions.flatMap((r) => Array.isArray(r.sector) ? r.sector : []))).sort();
+  const sourceOptions = Array.from(new Set(sourceForOptions.flatMap((r) => Array.isArray(r.source) ? r.source : []))).sort();
+  const tagOptions = Array.from(new Set(sourceForOptions.flatMap((r) => Array.isArray(r.tags) ? r.tags : []))).sort();
+  const assignedToOptions = Array.from(new Set(sourceForOptions.flatMap((r) => Array.isArray(r.assigned_to) ? r.assigned_to : []))).sort();
   const activeFilterCount = (Object.keys(filters) as (keyof Filters)[]).filter((k) => filters[k] !== "").length;
 
-  const filteredRows = rows.filter((row) => {
-    if (searchTerm.trim()) {
-      const matches = SEARCHABLE_COLUMNS.some((col) => {
-        const val = row[col];
-        if (val === null || val === undefined) return false;
-        return String(val).toLowerCase().includes(searchTerm.toLowerCase());
-      });
-      if (!matches) {
-        // also search in array fields (tags, sector, source)
-        const inTags = Array.isArray(row.tags) && row.tags.some((t) => t.toLowerCase().includes(searchTerm.toLowerCase()));
-        const inSector = Array.isArray(row.sector) && row.sector.some((t) => t.toLowerCase().includes(searchTerm.toLowerCase()));
-        const inSource = Array.isArray(row.source) && row.source.some((t) => t.toLowerCase().includes(searchTerm.toLowerCase()));
-        if (!matches && !inTags && !inSector && !inSource) return false;
-      }
-    }
-    if (filters.optin_status && row.optin_status !== filters.optin_status) return false;
-    if (filters.city && row.city !== filters.city) return false;
-    if (filters.sector && !(Array.isArray(row.sector) && row.sector.includes(filters.sector))) return false;
-    if (filters.source && !(Array.isArray(row.source) && row.source.includes(filters.source))) return false;
-    if (filters.tag && !(Array.isArray(row.tags) && row.tags.includes(filters.tag))) return false;
-    if (filters.assigned_to && !(Array.isArray(row.assigned_to) && row.assigned_to.includes(filters.assigned_to))) return false;
-    return true;
-  });
+  // Server-side fetch when in server-paged mode.
+  useEffect(() => {
+    if (!isServerPaged) return;
+    let cancelled = false;
+    // Defer the loading-flag flip to a microtask to satisfy the React 19
+    // set-state-in-effect rule (synchronous setState inside an effect body
+    // causes cascading renders).
+    queueMicrotask(() => {
+      if (cancelled) return;
+      setServerLoading(true);
+      setServerError(null);
+    });
+    const params = new URLSearchParams();
+    params.set("page", String(page));
+    params.set("pageSize", String(pageSize));
+    if (debouncedSearch.trim()) params.set("q", debouncedSearch.trim());
+    if (debouncedFilters.optin_status) params.set("optin", debouncedFilters.optin_status);
+    if (debouncedFilters.city)         params.set("city",  debouncedFilters.city);
+    if (debouncedFilters.sector)       params.set("sector", debouncedFilters.sector);
+    if (debouncedFilters.source)       params.set("source", debouncedFilters.source);
+    if (debouncedFilters.tag)          params.set("tag",    debouncedFilters.tag);
+    if (debouncedFilters.assigned_to)  params.set("assigned", debouncedFilters.assigned_to);
 
-  const totalPages = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
-  const paginated = filteredRows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+    fetch(`/api/main-contacts?${params.toString()}`)
+      .then(async (res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const json = await res.json();
+        if (cancelled) return;
+        startTransition(() => {
+          setServerRows((json.rows ?? []) as MainContactRow[]);
+          setServerTotal(Number(json.total ?? 0));
+        });
+      })
+      .catch((err) => { if (!cancelled) setServerError(err instanceof Error ? err.message : String(err)); })
+      .finally(() => { if (!cancelled) setServerLoading(false); });
+    return () => { cancelled = true; };
+  }, [isServerPaged, page, pageSize, debouncedSearch, debouncedFilters]);
+
+  const rows: MainContactRow[] = isServerPaged ? serverRows : (externalRows ?? []);
+  const total = isServerPaged ? serverTotal : (externalTotal ?? externalRows?.length ?? 0);
+  const loading = isServerPaged ? serverLoading : (externalLoading ?? false);
+
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const visibleCols = [...ALL_COLUMNS, { key: TOTAL_MAILS_SENT_KEY, label: "Total Mails Sent" }];
-  const allOnPage = paginated.map((r) => r.email);
+  const allOnPage = rows.map((r) => r.email);
   const allSelected = allOnPage.length > 0 && allOnPage.every((e) => selected.has(e));
   const someSelected = allOnPage.some((e) => selected.has(e));
 
@@ -117,7 +167,10 @@ export default function MainDatabaseTable({
   function toggleRow(email: string) { setSelected((prev) => { const n = new Set(prev); if (n.has(email)) n.delete(email); else n.add(email); return n; }); }
   function handleBulkDelete() { if (selected.size === 0) return; if (!confirm(`Delete ${selected.size} selected record${selected.size > 1 ? "s" : ""}?`)) return; onDeleteRows(Array.from(selected)); setSelected(new Set()); }
   function downloadCSV(mode: "all" | "selected" = "all") {
-    const exportRows = mode === "selected" ? filteredRows.filter((r) => selected.has(r.email)) : filteredRows;
+    // CSV export uses ONLY the currently visible page. For a full export, the
+    // user should run an explicit SQL query via the SQL box. This is a UX
+    // trade-off — exporting a 3k row CSV inline is not the goal of this view.
+    const exportRows = mode === "selected" ? rows.filter((r) => selected.has(r.email)) : rows;
     if (exportRows.length === 0) return;
     const exportCols = visibleCols.filter((c) => c.key !== TOTAL_MAILS_SENT_KEY);
     const headers = [...exportCols.map((c) => c.label), "Total Mails Sent"];
@@ -143,14 +196,6 @@ export default function MainDatabaseTable({
     return String(val);
   }
 
-  function formatDate(iso: string): string {
-    // Accepts YYYY-MM-DD (or full ISO timestamp) and returns DD MMM YYYY.
-    const datePart = iso.slice(0, 10);
-    const d = new Date(datePart + "T00:00:00Z");
-    if (isNaN(d.getTime())) return iso;
-    return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" });
-  }
-
   function getCellClass(key: keyof MainContactRow, val: unknown): string {
     if (key === TOTAL_MAILS_SENT_KEY) return "text-right font-mono";
     if (val === null || val === undefined) return "text-gray-300";
@@ -173,9 +218,13 @@ export default function MainDatabaseTable({
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <div className="flex items-center gap-2 flex-wrap">
             <h2 className="text-sm font-semibold text-gray-700">Main Database</h2>
-            <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">{filteredRows.length} {filteredRows.length === 1 ? "contact" : "contacts"}</span>
+            <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">
+              {total} {total === 1 ? "contact" : "contacts"}
+              {loading && <span className="ml-1 text-blue-500">…</span>}
+            </span>
             {selected.size > 0 && <span className="text-xs bg-orange-100 text-orange-600 px-2 py-0.5 rounded-full">{selected.size} selected</span>}
             {activeFilterCount > 0 && <span className="text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full">{activeFilterCount} filter{activeFilterCount > 1 ? "s" : ""}</span>}
+            {serverError && <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full" title={serverError}>Error</span>}
           </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
@@ -187,9 +236,12 @@ export default function MainDatabaseTable({
           </button>
           <div className="relative flex-1 min-w-[120px]">
             <input type="text" value={searchTerm} onChange={(e) => { setSearchTerm(e.target.value); onPageChange(1); }} placeholder="Search..." className="w-full pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-100 focus:border-blue-300 placeholder-gray-400" />
+            {loading && isServerPaged && (
+              <svg className="w-3.5 h-3.5 absolute right-2.5 top-1/2 -translate-y-1/2 text-blue-500 animate-spin" fill="none" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeOpacity="0.25" /><path fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" /></svg>
+            )}
             <svg className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
           </div>
-          <button onClick={() => downloadCSV(selected.size > 0 ? "selected" : "all")} className="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors flex items-center gap-1.5" title={selected.size > 0 ? `Export ${selected.size} selected` : "Export all visible"}><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg><span className="hidden sm:inline">{selected.size > 0 ? `CSV (${selected.size})` : "CSV"}</span></button>
+          <button onClick={() => downloadCSV(selected.size > 0 ? "selected" : "all")} className="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors flex items-center gap-1.5" title={selected.size > 0 ? `Export ${selected.size} selected` : `Export current page (${rows.length})`}><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg><span className="hidden sm:inline">{selected.size > 0 ? `CSV (${selected.size})` : "CSV"}</span></button>
           <button onClick={onUpload} className="px-3 py-1.5 text-xs border border-gray-200 hover:bg-gray-50 text-gray-600 rounded-lg transition-colors flex items-center gap-1.5"><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg><span className="hidden sm:inline">Upload</span></button>
           <button onClick={onBulkDelete} className="px-3 py-1.5 text-xs border border-red-200 hover:bg-red-50 text-red-600 rounded-lg transition-colors flex items-center gap-1.5"><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg><span className="hidden sm:inline">Delete CSV</span></button>
           <button onClick={onAdd} className="px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-1.5"><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg><span className="hidden sm:inline">Add</span></button>
@@ -210,8 +262,8 @@ export default function MainDatabaseTable({
       )}
 
       <div className="flex-1 overflow-auto">
-        {filteredRows.length === 0 ? (
-          <div className="flex items-center justify-center h-full text-sm text-gray-400">{searchTerm ? "No contacts match your search." : "No contacts yet. Click 'Add' or 'Upload' to get started."}</div>
+        {rows.length === 0 && !loading ? (
+          <div className="flex items-center justify-center h-full text-sm text-gray-400">{searchTerm || activeFilterCount > 0 ? "No contacts match your search." : "No contacts yet. Click 'Add' or 'Upload' to get started."}</div>
         ) : (
           <table className="min-w-max text-sm border-collapse">
             <thead className="sticky top-0 bg-gray-50 z-20">
@@ -223,7 +275,7 @@ export default function MainDatabaseTable({
               </tr>
             </thead>
             <tbody>
-              {paginated.map((row, i) => (
+              {rows.map((row, i) => (
                 <tr key={row.email} onDoubleClick={() => onEdit(row)} className={`border-b border-gray-100 hover:bg-blue-50 cursor-pointer transition-colors ${i % 2 === 0 ? "bg-white" : "bg-gray-50/30"} ${selected.has(row.email) ? "bg-orange-50" : ""}`}>
                   <td className="px-3 py-2 sticky left-0 bg-inherit z-10"><input type="checkbox" checked={selected.has(row.email)} onChange={() => toggleRow(row.email)} onClick={(e) => e.stopPropagation()} className="w-4 h-4 rounded border-gray-300 text-blue-600 cursor-pointer" /></td>
                   {visibleCols.map((col) => {
@@ -241,7 +293,7 @@ export default function MainDatabaseTable({
       </div>
 
       <div className="flex items-center justify-between px-2 sm:px-4 py-2.5 border-t border-gray-200 bg-gray-50 text-xs text-gray-500">
-        <p>{filteredRows.length === 0 ? "No contacts" : `Showing ${Math.min((page - 1) * PAGE_SIZE + 1, filteredRows.length)}–${Math.min(page * PAGE_SIZE, filteredRows.length)} of ${filteredRows.length}`}</p>
+        <p>{total === 0 ? "No contacts" : `Showing ${Math.min((page - 1) * pageSize + 1, total)}–${Math.min(page * pageSize, total)} of ${total}`}</p>
         <div className="flex items-center gap-1">
           <button onClick={() => onPageChange(1)} disabled={page === 1} className="w-7 h-7 flex items-center justify-center rounded hover:bg-gray-200 disabled:opacity-30 transition-colors"><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" /></svg></button>
           <button onClick={() => onPageChange(Math.max(1, page - 1))} disabled={page === 1} className="w-7 h-7 flex items-center justify-center rounded hover:bg-gray-200 disabled:opacity-30 transition-colors"><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg></button>

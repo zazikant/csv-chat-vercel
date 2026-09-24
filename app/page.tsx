@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { v4 as uuidv4 } from "uuid";
 import MainDatabaseTable from "@/components/MainDatabaseTable";
 import ContactsTable from "@/components/ContactsTable";
@@ -17,16 +17,6 @@ import { MainContactRow, ContactRow, MailerRow } from "@/lib/langgraph/state";
 type TabKey = "main" | "contacts" | "mailers";
 type MobileView = "table" | "chat";
 
-async function fetchMainContacts(): Promise<MainContactRow[]> {
-  const res = await fetch("/api/main-contacts");
-  if (!res.ok) return [];
-  return res.json();
-}
-async function fetchAllContacts(): Promise<ContactRow[]> {
-  const res = await fetch("/api/contacts");
-  if (!res.ok) return [];
-  return res.json();
-}
 async function fetchAllMailers(): Promise<MailerRow[]> {
   const res = await fetch("/api/mailers");
   if (!res.ok) return [];
@@ -34,15 +24,36 @@ async function fetchAllMailers(): Promise<MailerRow[]> {
 }
 
 export default function HomePage() {
+  return (
+    <Suspense fallback={<FullScreenLoading />}>
+      <HomePageInner />
+    </Suspense>
+  );
+}
+
+function FullScreenLoading() {
+  return (
+    <div className="flex h-screen items-center justify-center bg-gray-50 text-sm text-gray-400">
+      Loading…
+    </div>
+  );
+}
+
+function HomePageInner() {
   const [sessionId] = useState(() => uuidv4());
   const [tab, setTab] = useState<TabKey>("main");
   const [mobileView, setMobileView] = useState<MobileView>("table");
 
-  // Main contacts (identity)
-  const [mainRows, setMainRows] = useState<MainContactRow[]>([]);
+  // Main contacts: page state lives here; the table fetches its own page
+  // when `mainRowsOverride` is undefined (the new server-paged path).
   const [mainPage, setMainPage] = useState(1);
+  // When non-null, the table renders these rows instead of fetching its own
+  // page (used by SQL chat results and the "Show all" reset button).
+  const [mainRowsOverride, setMainRowsOverride] = useState<MainContactRow[] | null>(null);
+  const [mainTotalOverride, setMainTotalOverride] = useState<number | null>(null);
+  const [totalMailsSent, setTotalMailsSent] = useState<Map<string, number>>(new Map());
 
-  // Contacts (engagement)
+  // Contacts (engagement) — small table (266 rows), keep client-side.
   const [contactRows, setContactRows] = useState<ContactRow[]>([]);
   const [contactPage, setContactPage] = useState(1);
 
@@ -60,36 +71,67 @@ export default function HomePage() {
   const [showUpload, setShowUpload] = useState(false);
   const [showBulkDelete, setShowBulkDelete] = useState(false);
 
-  // Compute Total Mails Sent per email (from engagement rows with non-null mailer_id)
-  const totalMailsSent = new Map<string, number>();
-  for (const c of contactRows) {
-    if (c.mailer_id) {
-      const key = c.email.toLowerCase();
-      totalMailsSent.set(key, (totalMailsSent.get(key) ?? 0) + 1);
-    }
+  // Fetch mail-counts ONCE on mount (not per-page). Drives the "Total Mails
+  // Sent" column on every page without re-aggregating per row.
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/main-contacts/mail-counts")
+      .then((r) => (r.ok ? r.json() : {}))
+      .then((counts: Record<string, number>) => {
+        if (cancelled) return;
+        setTotalMailsSent(new Map(Object.entries(counts)));
+      })
+      .catch(() => { /* non-fatal — column just shows 0 */ });
+    return () => { cancelled = true; };
+  }, []);
+
+  async function reloadAllContacts() {
+    try {
+      const res = await fetch("/api/contacts");
+      if (res.ok) setContactRows(await res.json());
+    } catch { /* non-fatal */ }
+  }
+  function reloadContacts() {
+    // Defer state-setter to next microtask so it's not synchronously invoked
+    // from a useEffect body (React 19 / Next 16 strict rule).
+    queueMicrotask(() => { void reloadAllContacts(); });
+  }
+  function reloadMailers() { fetchAllMailers().then(setMailers); }
+  function reloadMailCounts() {
+    fetch("/api/main-contacts/mail-counts")
+      .then((r) => (r.ok ? r.json() : {}))
+      .then((counts: Record<string, number>) => setTotalMailsSent(new Map(Object.entries(counts))))
+      .catch(() => {});
   }
 
-  function reloadMain() { fetchMainContacts().then(setMainRows); }
-  function reloadContacts() { fetchAllContacts().then(setContactRows); }
-  function reloadMailers() { fetchAllMailers().then(setMailers); }
-
-  useEffect(() => { reloadMain(); reloadContacts(); reloadMailers(); }, []);
+  useEffect(() => {
+    queueMicrotask(() => {
+      void reloadAllContacts();
+      reloadMailers();
+    });
+  }, []);
 
   // Main Database handlers
   async function handleDeleteMainRows(emails: string[]) {
     await fetch("/api/main-contacts", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ emails }) });
-    reloadMain(); reloadContacts();
+    setMainRowsOverride(null);
+    setMainTotalOverride(null);
+    reloadAllContacts();
+    reloadMailCounts();
   }
   async function handleBulkDeleteMain(emails: string[]): Promise<{ deleted: number; notFound: string[] }> {
     const unique = Array.from(new Set(emails.map((e) => e.toLowerCase())));
-    const existing = new Set(mainRows.map((r) => r.email.toLowerCase()));
-    const toDelete = unique.filter((e) => existing.has(e));
-    const notFound = unique.filter((e) => !existing.has(e));
-    if (toDelete.length > 0) {
-      await fetch("/api/main-contacts", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ emails: toDelete }) });
-      reloadMain(); reloadContacts();
+    // We don't know the existing emails in server-paged mode without a fetch.
+    // Just delete optimistically — the API will report the actual count.
+    const notFound: string[] = [];
+    if (unique.length > 0) {
+      await fetch("/api/main-contacts", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ emails: unique }) });
     }
-    return { deleted: toDelete.length, notFound };
+    setMainRowsOverride(null);
+    setMainTotalOverride(null);
+    reloadAllContacts();
+    reloadMailCounts();
+    return { deleted: unique.length, notFound };
   }
 
   // Contacts handlers
@@ -98,7 +140,6 @@ export default function HomePage() {
     reloadContacts();
   }
   async function handleBulkDeleteContacts(emails: string[]): Promise<{ deleted: number; notFound: string[] }> {
-    // Delete by email (removes ALL engagement rows for that email)
     const unique = Array.from(new Set(emails.map((e) => e.toLowerCase())));
     const existingEmails = new Set(contactRows.map((r) => r.email.toLowerCase()));
     const toDelete = unique.filter((e) => existingEmails.has(e));
@@ -131,7 +172,11 @@ export default function HomePage() {
   }
 
   function handleSqlResult(rows: Record<string, unknown>[]) {
-    if (tab === "main") { setMainRows(rows as unknown as MainContactRow[]); setMainPage(1); }
+    if (tab === "main") {
+      setMainRowsOverride(rows as unknown as MainContactRow[]);
+      setMainTotalOverride(rows.length);
+      setMainPage(1);
+    }
     else if (tab === "contacts") { setContactRows(rows as unknown as ContactRow[]); setContactPage(1); }
     else { setMailers(rows as unknown as MailerRow[]); setMailerPage(1); }
     setMobileView("table");
@@ -139,19 +184,34 @@ export default function HomePage() {
 
   /** When the chat returns query results, update the active tab's table. */
   function handleChatTableUpdate(rows: Record<string, unknown>[]) {
-    if (tab === "main") { setMainRows(rows as unknown as MainContactRow[]); setMainPage(1); }
+    if (tab === "main") {
+      setMainRowsOverride(rows as unknown as MainContactRow[]);
+      setMainTotalOverride(rows.length);
+      setMainPage(1);
+    }
     else if (tab === "contacts") { setContactRows(rows as unknown as ContactRow[]); setContactPage(1); }
     else { setMailers(rows as unknown as MailerRow[]); setMailerPage(1); }
     setMobileView("table");
   }
 
+  function handleMainReset() {
+    setMainRowsOverride(null);
+    setMainTotalOverride(null);
+    setMainPage(1);
+  }
+
+  // Counts shown on tab buttons
+  const mainCount = mainRowsOverride ? mainRowsOverride.length : null; // null = "server will show"
+  const contactCount = contactRows.length;
+  const mailerCount = mailers.length;
+
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
       <div className={`flex-1 flex flex-col border-r border-gray-200 min-w-0 overflow-hidden ${mobileView === "chat" ? "hidden md:flex" : "flex"}`}>
         <div className="flex items-center gap-1 px-2 sm:px-4 pt-3 bg-white border-b border-gray-200 overflow-x-auto whitespace-nowrap flex-shrink-0">
-          <TabButton label="Main Database" count={mainRows.length} active={tab === "main"} onClick={() => setTab("main")} />
-          <TabButton label="Contacts" count={contactRows.length} active={tab === "contacts"} onClick={() => setTab("contacts")} />
-          <TabButton label="Mailers" count={mailers.length} active={tab === "mailers"} onClick={() => setTab("mailers")} />
+          <TabButton label="Main Database" count={mainCount} active={tab === "main"} onClick={() => setTab("main")} />
+          <TabButton label="Contacts" count={contactCount} active={tab === "contacts"} onClick={() => setTab("contacts")} />
+          <TabButton label="Mailers" count={mailerCount} active={tab === "mailers"} onClick={() => setTab("mailers")} />
           <button onClick={() => setMobileView("chat")} className="ml-auto flex-shrink-0 md:hidden flex items-center gap-1.5 px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors">
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>
             Chat
@@ -163,11 +223,12 @@ export default function HomePage() {
         <div className="flex-1 overflow-hidden">
           {tab === "main" ? (
             <MainDatabaseTable
-              rows={mainRows}
+              rows={mainRowsOverride ?? undefined}
+              total={mainTotalOverride ?? undefined}
               totalMailsSent={totalMailsSent}
               page={mainPage}
               onPageChange={setMainPage}
-              onReset={reloadMain}
+              onReset={mainRowsOverride ? handleMainReset : undefined}
               onEdit={(r) => { setMainEditRecord(r); setMainEditMode("edit"); }}
               onAdd={() => { setMainEditRecord(null); setMainEditMode("add"); }}
               onUpload={() => setShowUpload(true)}
@@ -215,7 +276,7 @@ export default function HomePage() {
       </div>
 
       {tab === "main" && (mainEditRecord !== null || mainEditMode === "add") && (
-        <MainEditModal record={mainEditRecord} mode={mainEditMode} onClose={() => { setMainEditRecord(null); setMainEditMode("edit"); }} onSave={reloadMain} />
+        <MainEditModal record={mainEditRecord} mode={mainEditMode} onClose={() => { setMainEditRecord(null); setMainEditMode("edit"); }} onSave={() => { handleMainReset(); reloadMailCounts(); reloadAllContacts(); }} />
       )}
       {tab === "contacts" && (editRecord !== null || editMode === "add") && (
         <EditModal record={editRecord} mode={editMode} onClose={() => { setEditRecord(null); setEditMode("edit"); }} onSave={reloadContacts} />
@@ -225,7 +286,7 @@ export default function HomePage() {
       )}
 
       {showUpload && (
-        <CSVUploadModal onClose={() => setShowUpload(false)} onUpload={() => { setShowUpload(false); reloadMain(); reloadContacts(); }} tab={tab} />
+        <CSVUploadModal onClose={() => setShowUpload(false)} onUpload={() => { setShowUpload(false); handleMainReset(); reloadAllContacts(); reloadMailCounts(); }} tab={tab} />
       )}
       {showBulkDelete && (
         <BulkDeleteModal
@@ -241,11 +302,11 @@ export default function HomePage() {
   );
 }
 
-function TabButton({ label, count, active, onClick }: { label: string; count: number; active: boolean; onClick: () => void }) {
+function TabButton({ label, count, active, onClick }: { label: string; count: number | null; active: boolean; onClick: () => void }) {
   return (
     <button onClick={onClick} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${active ? "border-blue-600 text-blue-600" : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"}`}>
       {label}
-      <span className={`text-xs px-2 py-0.5 rounded-full ${active ? "bg-blue-100 text-blue-600" : "bg-gray-100 text-gray-500"}`}>{count}</span>
+      <span className={`text-xs px-2 py-0.5 rounded-full ${active ? "bg-blue-100 text-blue-600" : "bg-gray-100 text-gray-500"}`}>{count ?? "…"}</span>
     </button>
   );
 }

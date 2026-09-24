@@ -3,6 +3,8 @@ import { supabase } from "@/lib/supabase";
 import { fetchAll } from "@/lib/fetchAll";
 import { normalizePhone } from "@/lib/normalizePhone";
 
+export const runtime = "nodejs";
+
 function normalizeArray(val: unknown): string[] {
   if (!Array.isArray(val)) return [];
   const seen = new Set<string>();
@@ -24,15 +26,73 @@ function normalizeOptinStatus(raw: string | undefined | null): string {
   return "Subscribed";
 }
 
-export async function GET() {
-  // Default sort: latest-added contact at top.
-  // created_date is a date (YYYY-MM-DD) — many rows share the same date,
-  // so we tiebreak with created_at (full timestamp) and then email for stability.
-  //
-  // Supabase caps every SELECT to 1000 rows. We use fetchAll() to paginate
-  // past that cap and return the full result set to the client.
+function isMissingColumnError(msg: string): boolean {
+  return /column .* does not exist|relation .* does not exist/.test(msg);
+}
+
+/**
+ * Server-side paginated + filtered + searched list of main_contacts.
+ *
+ * Query params (all optional):
+ *   page, pageSize, q, optin, city, sector, source, tag, assigned
+ *
+ * Returns { rows: MainContactRow[], total: number, page: number, pageSize: number }.
+ *
+ * When the search RPC is unavailable (column mismatch on old schemas),
+ * we fall back to a `fetchAll` + filter pipeline so the page still renders.
+ */
+export async function GET(req: NextRequest) {
+  const sp = req.nextUrl.searchParams;
+  const page = Math.max(1, parseInt(sp.get("page") ?? "1", 10) || 1);
+  const pageSize = Math.min(100, Math.max(1, parseInt(sp.get("pageSize") ?? "25", 10) || 25));
+  const q       = (sp.get("q")        ?? "").trim() || null;
+  const optin   = (sp.get("optin")    ?? "").trim() || null;
+  const city    = (sp.get("city")     ?? "").trim() || null;
+  const sector  = (sp.get("sector")   ?? "").trim() || null;
+  const source  = (sp.get("source")   ?? "").trim() || null;
+  const tag     = (sp.get("tag")      ?? "").trim() || null;
+  const assigned= (sp.get("assigned") ?? "").trim() || null;
+
+  // Try the RPC path first — single round-trip, server-side filter+count.
+  const rpcArgs = {
+    p_search: q,
+    p_optin_status: optin,
+    p_city: city,
+    p_sector: sector,
+    p_source: source,
+    p_tag: tag,
+    p_assigned_to: assigned,
+    p_page: page,
+    p_page_size: pageSize,
+  };
+
+  const { data: rpcRows, error: rpcError } = await supabase.rpc("search_main_contacts" as never, rpcArgs as never);
+
+  if (!rpcError && Array.isArray(rpcRows)) {
+    // Strip the synthetic _total_count from each row; we use the first row's value.
+    const totalFromFirst = rpcRows.length > 0 ? Number((rpcRows[0] as Record<string, unknown>)._total_count ?? 0) : 0;
+    const rows = rpcRows.map((r) => {
+      const { _total_count: _ignored, ...rest } = r as Record<string, unknown>;
+      void _ignored;
+      return rest;
+    });
+    return NextResponse.json({
+      rows,
+      total: totalFromFirst || rows.length,
+      page,
+      pageSize,
+    });
+  }
+
+  // If the RPC isn't deployed yet (older schema), fall back to fetchAll+filter.
+  // This keeps the UI functional while the migration is being applied.
+  if (rpcError && !isMissingColumnError(rpcError.message)) {
+    // Real error (network, auth, etc.) — surface it.
+    return NextResponse.json({ error: rpcError.message }, { status: 500 });
+  }
+
   try {
-    const rows = await fetchAll(
+    const all = await fetchAll<Record<string, unknown>>(
       "main_contacts",
       [
         { column: "created_date", ascending: false, nullsFirst: false },
@@ -40,7 +100,31 @@ export async function GET() {
         { column: "email",        ascending: true },
       ],
     );
-    return NextResponse.json(rows);
+    const needle = q ? q.toLowerCase() : null;
+    const filtered = all.filter((r) => {
+      if (optin   && r.optin_status !== optin) return false;
+      if (city    && r.city         !== city)  return false;
+      if (sector  && !(Array.isArray(r.sector)      && (r.sector      as string[]).includes(sector))) return false;
+      if (source  && !(Array.isArray(r.source)      && (r.source      as string[]).includes(source))) return false;
+      if (tag     && !(Array.isArray(r.tags)        && (r.tags        as string[]).includes(tag)))    return false;
+      if (assigned&& !(Array.isArray(r.assigned_to) && (r.assigned_to as string[]).includes(assigned))) return false;
+      if (needle) {
+        const hay = [r.name, r.company, r.designation, r.email, r.city, r.phone, r.remarks, r.location]
+          .filter((v) => v != null)
+          .map((v) => String(v).toLowerCase())
+          .join(" ");
+        const inArrays =
+          (Array.isArray(r.tags)        && (r.tags        as string[]).some((t) => t.toLowerCase().includes(needle))) ||
+          (Array.isArray(r.sector)      && (r.sector      as string[]).some((t) => t.toLowerCase().includes(needle))) ||
+          (Array.isArray(r.source)      && (r.source      as string[]).some((t) => t.toLowerCase().includes(needle)));
+        if (!hay.includes(needle) && !inArrays) return false;
+      }
+      return true;
+    });
+    const total = filtered.length;
+    const start = (page - 1) * pageSize;
+    const rows = filtered.slice(start, start + pageSize);
+    return NextResponse.json({ rows, total, page, pageSize });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return NextResponse.json({ error: msg }, { status: 500 });
