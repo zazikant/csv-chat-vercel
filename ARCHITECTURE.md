@@ -6,6 +6,7 @@ This document covers the complete architecture of the Email Campaign Tracker app
 > - [Setup instructions](README.md) — install, configure env vars, run
 > - [Schema SQL](migration_schema.sql) — full DDL (run in Supabase SQL Editor)
 > - [Schema v3 migration](SCHEMA_V3_MULTIPLE_EMAILS.sql) — change PK from `email` to `id` (multiple rows per email)
+> - [§13 Server-side paginated search](#13-main-database--server-side-paginated-search) — the 4-layer optimization for the Main Database tab
 
 ---
 
@@ -402,3 +403,88 @@ FROM mailers WHERE mailer_id = 'M001';
 -- Show contacts in mailer M001 who haven't opened
 SELECT * FROM contacts WHERE mailer_id = 'M001' AND opens = 0;
 ```
+
+---
+
+## 13. Main Database — Server-Side Paginated Search
+
+The `main_contacts` table holds one row per email (identity data only). At ~3,400 rows the original implementation was already at the edge of what `lib/fetchAll.ts`'s 1000-row-per-SELECT pagination could handle, and every page load forced:
+
+- **4 sequential Supabase round-trips** (`range(0,999)`, `range(1000,1999)`, `range(2000,2999)`, `range(3000,3999)`) to download the full table.
+- **Full 3,400-row payload** shipped over HTTP to the browser.
+- **Client-side `.filter()` over all 3,400 rows** on every search keystroke (`components/MainDatabaseTable.tsx`).
+- **Client-side iteration over all 266 contact rows** to rebuild `totalMailsSent` for the "Total Mails Sent" column (`app/page.tsx`).
+
+This section documents the four-layer optimization that replaced all of that.
+
+### 13.1 Layer 1 — Database
+
+A single migration (`fast_main_contacts_search`) applied via Supabase MCP adds:
+
+| Object | Purpose |
+|---|---|
+| `pg_trgm` extension | Enables trigram indexes for fast `ILIKE '%term%'` queries. |
+| `main_contacts_created_date_idx (created_date DESC NULLS LAST, email)` | B-tree on the default sort. Eliminates Seq Scan when no search/filter is applied. |
+| 8 × `main_contacts_*_trgm_idx` (name, company, designation, email, city, phone, remarks, location) | GIN `gin_trgm_ops` indexes. Each `ILIKE` becomes a Bitmap Index Scan. |
+| `search_main_contacts(p_search, p_optin_status, p_city, p_sector, p_source, p_tag, p_assigned_to, p_page, p_page_size)` RPC | One round-trip: filtered set + `count(*) OVER()` window + LIMIT/OFFSET page. Returns rows + `_total_count`. |
+
+Existing GIN indexes on `tags`, `source`, `assigned_to` already cover the `@>` containment operator used by the RPC — no duplication needed.
+
+**Verified query plans (PostgreSQL EXPLAIN ANALYZE on production DB):**
+
+```
+-- Selective search (1 hit) — uses all 8 GIN trigram indexes via Bitmap Index Scan
+SELECT * FROM search_main_contacts('ankita', NULL, NULL, NULL, NULL, NULL, NULL, 1, 25);
+Execution Time: 0.601 ms
+
+-- Broad search (889 hits) — planner correctly falls back to Seq Scan (cheaper than bitmap at this cardinality)
+SELECT * FROM search_main_contacts('gmail',  NULL, NULL, NULL, NULL, NULL, NULL, 1, 25);
+Execution Time: 18.874 ms
+
+-- Unfiltered default page — Seq Scan + top-N heapsort (small dataset, planner prefers this)
+SELECT * FROM search_main_contacts(NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, 25);
+Execution Time: 7.486 ms
+```
+
+### 13.2 Layer 2 — API
+
+**`GET /api/main-contacts`** — accepts `?page&pageSize&q&optin&city&sector&source&tag&assigned` query params. Calls the RPC and returns `{rows, total, page, pageSize}`. If the RPC is missing (older schema), it falls back to `fetchAll` + in-memory filter so the UI never breaks.
+
+**`GET /api/main-contacts/mail-counts`** (new) — single SQL aggregation that returns `Record<lowercase_email, count>` for the "Total Mails Sent" column. Replaces the previous client-side loop over all 266 contact rows. Fetched **once** on page mount, not per page.
+
+POST / PUT / DELETE on `/api/main-contacts` are unchanged.
+
+### 13.3 Layer 3 — Frontend
+
+- **`hooks/useDebounce.ts`** (new) — generic `<T>` hook, default 300ms. Matches the pattern from `github.com/zazikant/Employee-Directory` (the same author's earlier project, which solved the same problem for its `employees` table).
+- **`components/MainDatabaseTable.tsx`** — rewritten with two operating modes:
+  1. **Server-paged (default)** — the component fetches its own page via `fetch('/api/main-contacts?…')` inside a `useEffect`, driven by `[page, debouncedSearch, debouncedFilters]`. State updates wrapped in `startTransition` so the input stays responsive while the new page renders. Shows a spinner inside the search box while loading.
+  2. **Override (legacy)** — when the parent passes `rows` (e.g. a SQL chat query returned a custom result), the component renders them directly without fetching. The parent can call `onReset` to clear the override.
+- **`app/page.tsx`** — wrapped in `<Suspense>` (Next.js 16 hard requirement for any client subtree that may read `useSearchParams`-style flows; otherwise production builds fail with `Missing Suspense boundary`). Dropped the old `mainRows` state and `fetchMainContacts` callsite for the Main tab. Mail-counts are fetched once on mount.
+
+### 13.4 React 19 / Next.js 16 gotchas hit during the implementation
+
+- **`react-hooks/set-state-in-effect`** (new rule in this ESLint config) flags synchronous `setState` calls inside a `useEffect` body. The fix is to defer the state-setter with `queueMicrotask(() => setX(...))` or move it inside an awaited callback.
+- **`useTransition`** cannot wrap a controlled input's `onChange` — only the post-fetch `setRows` / `setTotal` setters. Wrapping the input change breaks typing.
+- **`<Suspense>` boundary** is required around any subtree that may read `useSearchParams` (or sync `searchParams` flow) in production builds. The reference repo `Employee-Directory` was already wrapped; csv-chat-vercel was not, and would have failed at build time.
+
+### 13.5 Results
+
+| Metric | Before | After |
+|---|---|---|
+| Round-trips per page load | 4 sequential (Supabase 1k cap) | 1 (RPC) + 1 (mail-counts, once) |
+| Rows shipped to browser per page | 3,400 (~1 MB+) | 25 (~30 KB) |
+| Search latency (per keystroke) | Client filter over 3,400 rows | Server ILIKE with GIN trigram indexes; 300ms debounce |
+| Selective search (e.g. "ankita") | 4 ms Seq Scan over 3,400 | 0.6 ms Bitmap Index Scan |
+| Total Mails Sent computation | Client loop over 266 contact rows per render | One server aggregation, cached for the session |
+| CSV export | All 3,400 rows | Current page only (use SQL Query Box for full export) |
+
+### 13.6 Virtualization — not added
+
+Considered `@tanstack/react-virtual` / `react-window` for the table rows. **Rejected** at this scale: 25 rows × 14 columns = 350 cells per render, well below React's render budget even on mobile. The added dependency (~10 KB gzipped + maintenance) wasn't worth zero observable gain. Revisit if row count grows past ~100.
+
+### 13.7 Future considerations
+
+- **Keyset (cursor) pagination** — replace OFFSET with `(created_date, email) < (?, ?)` once any user regularly pages past page 50. OFFSET cost is currently negligible (<10 ms) but grows linearly.
+- **`useDeferredValue`** — could replace the `useDebounce` for the search term. Debounce still wins for expensive fetches because it actually throttles; `useDeferredValue` only deprioritises the render. Keep debounce until traffic patterns confirm.
+- **Cache option lists** — the city/sector/source/tag/assigned dropdown option lists are currently derived from the visible page (25 rows). A small `SELECT DISTINCT … LIMIT 100` per open of the filters panel would give complete lists; consider if users complain about missing options.
