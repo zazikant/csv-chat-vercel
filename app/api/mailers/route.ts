@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
+import { fetchAll } from "@/lib/fetchAll";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -20,15 +21,17 @@ export async function GET(req: NextRequest) {
   }
 
   // Full mailer records (used by MailersTable)
-  const { data, error } = await supabase
-    .from("mailers")
-    .select("*")
-    .order("sent_date", { ascending: false, nullsFirst: false });
-
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  // Supabase caps every SELECT to 1000 rows — paginate past it via fetchAll().
+  try {
+    const rows = await fetchAll(
+      "mailers",
+      [{ column: "sent_date", ascending: false, nullsFirst: false }],
+    );
+    return NextResponse.json(rows);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
-  return NextResponse.json(data ?? []);
 }
 
 export async function POST(req: NextRequest) {

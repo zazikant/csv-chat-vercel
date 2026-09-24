@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
+import { fetchAll } from "@/lib/fetchAll";
 
 function normalizeArray(val: unknown): string[] {
   if (!Array.isArray(val)) return [];
@@ -26,14 +27,23 @@ export async function GET() {
   // Default sort: latest-added contact at top.
   // created_date is a date (YYYY-MM-DD) — many rows share the same date,
   // so we tiebreak with created_at (full timestamp) and then email for stability.
-  const { data, error } = await supabase
-    .from("main_contacts")
-    .select("*")
-    .order("created_date", { ascending: false, nullsFirst: false })
-    .order("created_at", { ascending: false, nullsFirst: false })
-    .order("email", { ascending: true });
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json(data);
+  //
+  // Supabase caps every SELECT to 1000 rows. We use fetchAll() to paginate
+  // past that cap and return the full result set to the client.
+  try {
+    const rows = await fetchAll(
+      "main_contacts",
+      [
+        { column: "created_date", ascending: false, nullsFirst: false },
+        { column: "created_at",   ascending: false, nullsFirst: false },
+        { column: "email",        ascending: true },
+      ],
+    );
+    return NextResponse.json(rows);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return NextResponse.json({ error: msg }, { status: 500 });
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -189,12 +199,31 @@ export async function PUT(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
   const body = await req.json();
   if (Array.isArray(body.emails)) {
-    const { error } = await supabase
-      .from("main_contacts")
-      .delete()
-      .in("email", body.emails.map((e: string) => e.toLowerCase()));
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    return NextResponse.json({ success: true, deleted: body.emails.length });
+    // Chunk the deletes — Supabase's .in() filter bails on very large arrays
+    // (URL length + query planner limits). 500 per batch is a safe ceiling.
+    const BATCH = 500;
+    const emails = body.emails.map((e: string) => String(e).toLowerCase());
+    let deletedCount = 0;
+    const errors: string[] = [];
+    for (let i = 0; i < emails.length; i += BATCH) {
+      const batch = emails.slice(i, i + BATCH);
+      const { error } = await supabase
+        .from("main_contacts")
+        .delete()
+        .in("email", batch);
+      if (error) {
+        errors.push(`Batch ${Math.floor(i / BATCH) + 1}: ${error.message}`);
+      } else {
+        deletedCount += batch.length;
+      }
+    }
+    if (errors.length > 0) {
+      return NextResponse.json(
+        { error: `Some batches failed: ${errors.join("; ")}`, deleted: deletedCount },
+        { status: 500 }
+      );
+    }
+    return NextResponse.json({ success: true, deleted: deletedCount });
   }
   const { email } = body;
   if (!email) return NextResponse.json({ error: "email or emails is required" }, { status: 400 });

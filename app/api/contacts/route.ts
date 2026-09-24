@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
+import { fetchAll } from "@/lib/fetchAll";
 
 function normalizeOptinStatus(raw: string | undefined | null): string {
   const s = (raw ?? "").trim().toLowerCase().replace(/[-_\s]+/g, " ");
@@ -24,12 +25,14 @@ async function ensureMailerExists(mailerId: string): Promise<{ ok: boolean; erro
 }
 
 export async function GET() {
-  const { data, error } = await supabase
-    .from("contacts")
-    .select("*")
-    .order("id", { ascending: false });
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json(data);
+  // Supabase caps every SELECT to 1000 rows — paginate past it via fetchAll().
+  try {
+    const rows = await fetchAll("contacts", [{ column: "id", ascending: false }]);
+    return NextResponse.json(rows);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return NextResponse.json({ error: msg }, { status: 500 });
+  }
 }
 
 export async function POST(req: NextRequest) {
