@@ -24,11 +24,87 @@ async function ensureMailerExists(mailerId: string): Promise<{ ok: boolean; erro
   return { ok: true };
 }
 
-export async function GET() {
-  // Supabase caps every SELECT to 1000 rows — paginate past it via fetchAll().
+function isMissingColumnError(msg: string): boolean {
+  return /column .* does not exist|relation .* does not exist|function .* does not exist|Could not find the function/.test(msg);
+}
+
+/**
+ * GET /api/contacts
+ *
+ * Without `page` param: legacy shape — the full table as a bare array
+ * (ordered by id DESC). Kept for any older consumers.
+ *
+ * With `page` param: server-side paginated + filtered + searched —
+ *   ?page&pageSize&q&optin&engagement&mailer  (mailer='(none)' = unassigned)
+ * Returns { rows, total, page, pageSize } via the search_contacts RPC
+ * (single round-trip: filter + count(*) OVER() + LIMIT/OFFSET).
+ * Falls back to fetchAll + in-memory filter if the RPC isn't deployed.
+ */
+export async function GET(req: NextRequest) {
+  const sp = req.nextUrl.searchParams;
+  if (!sp.has("page")) {
+    // Legacy: full table as a bare array.
+    try {
+      const rows = await fetchAll("contacts", [{ column: "id", ascending: false }]);
+      return NextResponse.json(rows);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return NextResponse.json({ error: msg }, { status: 500 });
+    }
+  }
+
+  const page = Math.max(1, parseInt(sp.get("page") ?? "1", 10) || 1);
+  const pageSize = Math.min(100, Math.max(1, parseInt(sp.get("pageSize") ?? "25", 10) || 25));
+  const q          = (sp.get("q")         ?? "").trim() || null;
+  const optin      = (sp.get("optin")     ?? "").trim() || null;
+  const engagement = (sp.get("engagement") ?? "").trim() || null;
+  const mailer     = (sp.get("mailer")    ?? "").trim() || null;
+
+  const rpcArgs = {
+    p_search: q,
+    p_optin_status: optin,
+    p_engagement: engagement,
+    p_mailer_id: mailer,
+    p_page: page,
+    p_page_size: pageSize,
+  };
+
+  const { data: rpcRows, error: rpcError } = await supabase.rpc("search_contacts", rpcArgs);
+
+  if (!rpcError && Array.isArray(rpcRows)) {
+    const totalFromFirst = rpcRows.length > 0 ? Number((rpcRows[0] as Record<string, unknown>)._total_count ?? 0) : 0;
+    const rows = rpcRows.map((r) => {
+      const { _total_count: _ignored, ...rest } = r as Record<string, unknown>;
+      void _ignored;
+      return rest;
+    });
+    return NextResponse.json({ rows, total: totalFromFirst || rows.length, page, pageSize });
+  }
+
+  if (rpcError && !isMissingColumnError(rpcError.message)) {
+    return NextResponse.json({ error: rpcError.message }, { status: 500 });
+  }
+
+  // Fallback: fetchAll + in-memory filter (older schema without the RPC).
   try {
-    const rows = await fetchAll("contacts", [{ column: "id", ascending: false }]);
-    return NextResponse.json(rows);
+    const all = await fetchAll<Record<string, unknown>>("contacts", [{ column: "id", ascending: false }]);
+    const needle = q ? q.toLowerCase() : null;
+    const filtered = all.filter((r) => {
+      if (optin      && r.optin_status    !== optin)      return false;
+      if (engagement && r.engagement_score !== engagement) return false;
+      if (mailer === "(none)") { if (r.mailer_id) return false; }
+      else if (mailer && r.mailer_id !== mailer) return false;
+      if (needle) {
+        const hay = [r.email, r.mailer_id, r.optin_status, r.engagement_score]
+          .filter((v) => v != null)
+          .map((v) => String(v).toLowerCase())
+          .join(" ");
+        if (!hay.includes(needle)) return false;
+      }
+      return true;
+    });
+    const start = (page - 1) * pageSize;
+    return NextResponse.json({ rows: filtered.slice(start, start + pageSize), total: filtered.length, page, pageSize });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return NextResponse.json({ error: msg }, { status: 500 });
@@ -103,13 +179,34 @@ export async function PUT(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   const body = await req.json();
+  if (Array.isArray(body.emails)) {
+    // Bulk delete by email (BulkDeleteModal). The UI is server-paged and no
+    // longer holds the full table, so email→id mapping happens here instead
+    // of in the browser. Deletes every engagement row for those emails
+    // (mailer counters recompute automatically via the AFTER DELETE trigger).
+    const BATCH = 500;
+    const emails = body.emails.map((e: string) => String(e).trim().toLowerCase()).filter(Boolean);
+    if (emails.length === 0) return NextResponse.json({ error: "emails array is empty" }, { status: 400 });
+    let deletedCount = 0;
+    const errors: string[] = [];
+    for (let i = 0; i < emails.length; i += BATCH) {
+      const batch = emails.slice(i, i + BATCH);
+      const { error } = await supabase.from("contacts").delete().in("email", batch);
+      if (error) errors.push(`Batch ${Math.floor(i / BATCH) + 1}: ${error.message}`);
+      else deletedCount += batch.length;
+    }
+    if (errors.length > 0) {
+      return NextResponse.json({ error: `Some batches failed: ${errors.join("; ")}`, deleted: deletedCount }, { status: 500 });
+    }
+    return NextResponse.json({ success: true, deleted: deletedCount });
+  }
   if (Array.isArray(body.ids)) {
     const { error } = await supabase.from("contacts").delete().in("id", body.ids);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     return NextResponse.json({ success: true, deleted: body.ids.length });
   }
   const { id } = body;
-  if (!id) return NextResponse.json({ error: "id or ids is required" }, { status: 400 });
+  if (!id) return NextResponse.json({ error: "id, ids, or emails is required" }, { status: 400 });
   const { error } = await supabase.from("contacts").delete().eq("id", id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ success: true });

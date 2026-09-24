@@ -6,7 +6,7 @@ This document covers the complete architecture of the Email Campaign Tracker app
 > - [Setup instructions](README.md) — install, configure env vars, run
 > - [Schema SQL](migration_schema.sql) — full DDL (run in Supabase SQL Editor)
 > - [Schema v3 migration](SCHEMA_V3_MULTIPLE_EMAILS.sql) — change PK from `email` to `id` (multiple rows per email)
-> - [§13 Server-side paginated search](#13-main-database--server-side-paginated-search) — the 4-layer optimization for the Main Database tab
+> - [§13 Server-side paginated search](#13-server-side-paginated-search--all-tabs) — the 4-layer optimization, now on all three tabs
 
 ---
 
@@ -129,7 +129,9 @@ Sets `updated_at = now()` on every mailer update.
 ## 4. API Routes
 
 ### `GET /api/contacts`
-Returns all contacts, ordered by `id DESC` (newest first).
+Without `page`: legacy shape — all contacts as a bare array, ordered by `id DESC` (newest first).
+
+With `page`: server-side paginated search (§13.8) — `?page&pageSize&q&optin&engagement&mailer` (`mailer=(none)` = unassigned rows). Returns `{rows, total, page, pageSize}` via the `search_contacts` RPC, with a fetchAll+filter fallback.
 
 ### `POST /api/contacts`
 Add a new contact or update an existing one.
@@ -151,10 +153,11 @@ Update a contact by `id`.
 2. **Sync identity fields** to all other rows with the same email
 
 ### `DELETE /api/contacts`
-Delete contacts by `id` or `ids`.
+Delete contacts by `id`, `ids`, or `emails`.
 
 - `{id: 1}` — delete one row
 - `{ids: [1, 2, 3]}` — delete multiple rows
+- `{emails: ["a@b.com", ...]}` — bulk delete every engagement row for those emails (chunked 500/batch). Used by BulkDeleteModal now that the UI is server-paged and no longer holds the full table in the browser; mailer counters recompute via the existing AFTER DELETE trigger.
 
 ### `POST /api/contacts/bulk`
 CSV bulk upload with dedup logic.
@@ -179,7 +182,9 @@ Run a raw SQL SELECT query (used by the SQL Query Box).
 Returns distinct tags with usage counts. Used by the TagsInput component's smart-suggestion dropdown.
 
 ### `GET /api/mailers`
-Returns all mailers. Supports `?values=1` for a lightweight response (just `mailer_id` + `subject_line`) used by the contact form's mailer autocomplete.
+Without `page`: legacy shape — all mailers as a bare array (ordered `sent_date DESC`). Supports `?values=1` for a lightweight response (just `mailer_id` + `subject_line`) used by the contact form's mailer autocomplete.
+
+With `page`: server-side paginated search + sort (§13.8) — `?page&pageSize&q&minOpen&minClick&minUnsub&minBounce&sentAfter&sentBefore&hasUnsub&hasBounced&sortBy&sortDir`. Returns `{rows, total, page, pageSize}` via the `search_mailers` RPC (sort columns whitelisted server-side), with a fetchAll+filter+sort fallback.
 
 ### `POST/PUT/DELETE /api/mailers`
 Full CRUD for mailers. All counter/generated fields are stripped from the payload — they're auto-maintained by triggers.
@@ -319,6 +324,10 @@ app/
     contacts/bulk/route.ts          # POST bulk upload with dedup + identity sync
     contacts/values/route.ts        # GET distinct values (for FieldSuggest autocomplete)
     mailers/route.ts               # GET/POST/PUT/DELETE on mailers
+    main-contacts/route.ts          # GET (server-paginated search) / POST / PUT / DELETE on main_contacts
+    main-contacts/bulk/route.ts     # POST bulk upload / delete for main_contacts
+    main-contacts/mail-counts/route.ts  # GET per-email mail counts (Total Mails Sent column)
+    main-contacts/options/route.ts  # GET complete filter option lists (Filters panel dropdowns)
     query/route.ts                  # POST raw SQL SELECT (for SQL Query Box)
     tags/route.ts                  # GET distinct tags with counts (for TagsInput)
 components/
@@ -406,7 +415,7 @@ SELECT * FROM contacts WHERE mailer_id = 'M001' AND opens = 0;
 
 ---
 
-## 13. Main Database — Server-Side Paginated Search
+## 13. Server-Side Paginated Search — All Tabs
 
 The `main_contacts` table holds one row per email (identity data only). At ~3,400 rows the original implementation was already at the edge of what `lib/fetchAll.ts`'s 1000-row-per-SELECT pagination could handle, and every page load forced:
 
@@ -426,9 +435,13 @@ A single migration (`fast_main_contacts_search`) applied via Supabase MCP adds:
 | `pg_trgm` extension | Enables trigram indexes for fast `ILIKE '%term%'` queries. |
 | `main_contacts_created_date_idx (created_date DESC NULLS LAST, email)` | B-tree on the default sort. Eliminates Seq Scan when no search/filter is applied. |
 | 8 × `main_contacts_*_trgm_idx` (name, company, designation, email, city, phone, remarks, location) | GIN `gin_trgm_ops` indexes. Each `ILIKE` becomes a Bitmap Index Scan. |
-| `search_main_contacts(p_search, p_optin_status, p_city, p_sector, p_source, p_tag, p_assigned_to, p_page, p_page_size)` RPC | One round-trip: filtered set + `count(*) OVER()` window + LIMIT/OFFSET page. Returns rows + `_total_count`. |
+| 4 × `main_contacts_{tags,sector,source,assigned_to}_astext_trgm_idx` | GIN `gin_trgm_ops` expression indexes on `text_array_to_string(<col>, ', ')` — added by `fix_main_contacts_search_arrays` so free-text search also hits the array columns via Bitmap Index Scan. |
+| `text_array_to_string(text[], text)` helper | IMMUTABLE wrapper around `array_to_string` (which is only STABLE and thus not indexable). Must be used with the exact same separator literal (`', '`) as the indexes. |
+| `search_main_contacts(p_search, p_optin_status, p_city, p_sector, p_source, p_tag, p_assigned_to, p_page, p_page_size)` RPC | One round-trip: filtered set + `count(*) OVER()` window + LIMIT/OFFSET page. Returns rows + `_total_count`. `p_search` ILIKEs all 8 text columns **plus** `tags` / `sector` / `source` / `assigned_to` arrays. |
 
 Existing GIN indexes on `tags`, `source`, `assigned_to` already cover the `@>` containment operator used by the RPC — no duplication needed.
+
+> **Regression fixed (`fix_main_contacts_search_arrays`):** the first version of the RPC only ILIKE'd the 8 text columns, so typing a tag like `qto` in the Main Database search bar returned 0 contacts (112 carry that tag) — even though the pre-migration client-side filter had searched the arrays. The RPC now ORs `text_array_to_string(<array>, ', ') ILIKE …` for all 4 array columns, and the 4 expression trigram indexes keep it a BitmapOr plan (verified 1.9 ms for `qto`, 112 hits).
 
 **Verified query plans (PostgreSQL EXPLAIN ANALYZE on production DB):**
 
@@ -436,6 +449,11 @@ Existing GIN indexes on `tags`, `source`, `assigned_to` already cover the `@>` c
 -- Selective search (1 hit) — uses all 8 GIN trigram indexes via Bitmap Index Scan
 SELECT * FROM search_main_contacts('ankita', NULL, NULL, NULL, NULL, NULL, NULL, 1, 25);
 Execution Time: 0.601 ms
+
+-- Tag search via free text (112 hits) — BitmapOr over all 12 trigram indexes,
+-- hits land in main_contacts_tags_astext_trgm_idx (added by fix_main_contacts_search_arrays)
+SELECT * FROM search_main_contacts('qto', NULL, NULL, NULL, NULL, NULL, NULL, 1, 25);
+Execution Time: 1.860 ms
 
 -- Broad search (889 hits) — planner correctly falls back to Seq Scan (cheaper than bitmap at this cardinality)
 SELECT * FROM search_main_contacts('gmail',  NULL, NULL, NULL, NULL, NULL, NULL, 1, 25);
@@ -452,6 +470,8 @@ Execution Time: 7.486 ms
 
 **`GET /api/main-contacts/mail-counts`** (new) — single SQL aggregation that returns `Record<lowercase_email, count>` for the "Total Mails Sent" column. Replaces the previous client-side loop over all 266 contact rows. Fetched **once** on page mount, not per page.
 
+**`GET /api/main-contacts/options`** (new) — complete filter option lists for the Filters panel. Returns `{ city, sector, source, tags, assigned_to }` string arrays (trimmed, deduped, sorted) via the `get_main_filter_options()` RPC — one round-trip, distinct + usage counts computed server-side. Fixes the page-derived dropdown gap: the Tag/Sector/Source/City/Assigned-To dropdowns used to be built from the visible 25-row page, so a tag like `qto` (112 contacts spread across pages) never appeared as a selectable option. The endpoint is fetched each time the Filters panel opens (cheap, and keeps newly added values fresh); it falls back to a 5-column `fetchAll` aggregation if the RPC isn't deployed.
+
 POST / PUT / DELETE on `/api/main-contacts` are unchanged.
 
 ### 13.3 Layer 3 — Frontend
@@ -460,6 +480,7 @@ POST / PUT / DELETE on `/api/main-contacts` are unchanged.
 - **`components/MainDatabaseTable.tsx`** — rewritten with two operating modes:
   1. **Server-paged (default)** — the component fetches its own page via `fetch('/api/main-contacts?…')` inside a `useEffect`, driven by `[page, debouncedSearch, debouncedFilters]`. State updates wrapped in `startTransition` so the input stays responsive while the new page renders. Shows a spinner inside the search box while loading.
   2. **Override (legacy)** — when the parent passes `rows` (e.g. a SQL chat query returned a custom result), the component renders them directly without fetching. The parent can call `onReset` to clear the override.
+- **Filter option lists** — the Filters panel fetches complete dropdown lists from `/api/main-contacts/options` every time it opens (server-paged mode). Until loaded — or in override mode / on fetch failure — the dropdowns fall back to page-derived options. City switched from a plain `<select>` to the same searchable dropdown as the array filters, since full-dataset lists can be long.
 - **`app/page.tsx`** — wrapped in `<Suspense>` (Next.js 16 hard requirement for any client subtree that may read `useSearchParams`-style flows; otherwise production builds fail with `Missing Suspense boundary`). Dropped the old `mainRows` state and `fetchMainContacts` callsite for the Main tab. Mail-counts are fetched once on mount.
 
 ### 13.4 React 19 / Next.js 16 gotchas hit during the implementation
@@ -487,4 +508,27 @@ Considered `@tanstack/react-virtual` / `react-window` for the table rows. **Reje
 
 - **Keyset (cursor) pagination** — replace OFFSET with `(created_date, email) < (?, ?)` once any user regularly pages past page 50. OFFSET cost is currently negligible (<10 ms) but grows linearly.
 - **`useDeferredValue`** — could replace the `useDebounce` for the search term. Debounce still wins for expensive fetches because it actually throttles; `useDeferredValue` only deprioritises the render. Keep debounce until traffic patterns confirm.
-- **Cache option lists** — the city/sector/source/tag/assigned dropdown option lists are currently derived from the visible page (25 rows). A small `SELECT DISTINCT … LIMIT 100` per open of the filters panel would give complete lists; consider if users complain about missing options.
+- **Cache option lists** — *solved*: dropdown option lists were originally derived from the visible page (25 rows), which hid values like the `qto` tag. The Filters panel now fetches complete lists from `/api/main-contacts/options` (backed by `get_main_filter_options()`) each time it opens. No caching layer was needed at this size (~15 distinct values; the RPC is a few ms).
+
+### 13.8 Contacts & Mailers — the same pattern, ported
+
+The `fast_contacts_mailers_search` migration (applied via Supabase MCP) extends the full 4-layer stack to the other two tabs. Both tables previously shipped their entire contents to the browser and filtered client-side.
+
+| Object | Purpose |
+|---|---|
+| `search_contacts(p_search, p_optin_status, p_engagement, p_mailer_id, p_page, p_page_size)` | Contacts tab search/filter/page in one round-trip. `p_search` ILIKEs email / mailer_id / optin_status / engagement_score; `p_mailer_id='(none)'` selects unassigned rows. Default order `id DESC`. |
+| `get_contacts_filter_options()` | Distinct `mailer_id` values in use (with counts) — drives the Mailer filter dropdown via `GET /api/contacts/options`. |
+| `search_mailers(p_search, p_min_*_rate, p_sent_after/before, p_has_unsubscribed, p_has_hardbounced, p_sort_by, p_sort_dir, p_page, p_page_size)` | Mailers tab search/filter/**sort**/page in one round-trip. Sort columns are whitelisted inside the RPC (unknown names fall back to the default `sent_date DESC NULLS LAST, mailer_id`); NULLS LAST on both directions matches the old client-side sort. |
+| `contacts_email_trgm_idx`, `contacts_mailer_id_trgm_idx` | GIN trigram indexes for the contacts free-text ILIKEs. |
+| `mailers_mailer_id_trgm_idx`, `mailers_subject_line_trgm_idx`, `mailers_template_name_trgm_idx` | GIN trigram indexes for the mailers free-text ILIKEs. |
+| `mailers_sent_date_desc_idx (sent_date DESC NULLS LAST, mailer_id)` | B-tree on the mailers default sort order. |
+
+**Semantics notes / behavioral changes:**
+
+- **`sent_before` now excludes rows with NULL `sent_date`** — the old client-side filter treated NULL as epoch 0 and included them. `sent_after` behavior is unchanged (NULL always excluded).
+- **CSV export on Contacts/Mailers** now exports the current page only (use the SQL Query Box for a full export) — same trade-off as the Main Database tab.
+- **`refreshToken` prop** — all three tables refetch their current page when the parent bumps a shared `dataVersion` counter after any mutation (save / delete / upload). Without it, an edit made on page 1 with an unchanged search/filter left the table stale — this also fixed a latent Main Database bug.
+- **Bulk delete by email** (`DELETE /api/contacts {emails}`) moved server-side: the browser no longer holds the full contacts table, so email→id mapping happens in the API. Mailer bulk delete is likewise optimistic (the API reports actual results).
+- **`SearchableFilter`** extracted to `components/SearchableFilter.tsx` and shared by all three tables' filter panels (Mailer filter on the Contacts tab is now searchable too).
+- **Override mode** (SQL chat / SQL box results) renders rows as-is on all three tabs — no local re-filtering — matching the Main Database behavior.
+- The API routes keep their **legacy bare-array GET** shapes (no `page` param) so older consumers and `?values=1` keep working; the paginated shape `{rows, total, page, pageSize}` is returned only when `page` is present.

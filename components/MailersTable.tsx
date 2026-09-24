@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { MailerRow } from "@/lib/langgraph/state";
+import { useDebounce } from "@/hooks/useDebounce";
 
 const ALL_COLUMNS: { key: keyof MailerRow; label: string }[] = [
   { key: "mailer_id",          label: "Mailer ID" },
@@ -29,15 +30,19 @@ const VISIBLE_COLUMNS: (keyof MailerRow)[] = [
 ];
 
 const PAGE_SIZE = 25;
-const SEARCHABLE_COLUMNS: (keyof MailerRow)[] = [
-  "mailer_id", "subject_line", "template_name",
-];
 
 interface Props {
-  rows: MailerRow[];
+  // When provided, the parent owns the rows (SQL chat / SQL box override) and
+  // we render them as-is. When omitted, we fetch our own page server-side.
+  rows?: MailerRow[];
   page: number;
+  pageSize?: number;
+  total?: number;
+  // Incremented by the parent after any mutation (save/delete/upload) —
+  // refetches the current page.
+  refreshToken?: number;
   onPageChange: (page: number) => void;
-  onReset?: () => void;  // optional - shown when SQL query replaces the visible rows
+  onReset?: () => void;  // shown when SQL query replaces the visible rows
   onEdit: (row: MailerRow) => void;
   onAdd: () => void;
   onBulkDelete: () => void;
@@ -60,86 +65,87 @@ const EMPTY_FILTERS: MailerFilters = {
   sent_after: "", sent_before: "", has_unsubscribed: "", has_hardbounced: "",
 };
 
-export default function MailersTable({
-  rows, page, onPageChange, onReset, onEdit, onAdd, onBulkDelete, onDeleteRows,
-}: Props) {
+export default function MailersTable(props: Props) {
+  const {
+    rows: externalRows,
+    page,
+    pageSize = PAGE_SIZE,
+    total: externalTotal,
+    refreshToken,
+    onPageChange,
+    onReset,
+    onEdit,
+    onAdd,
+    onBulkDelete,
+    onDeleteRows,
+  } = props;
+
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [searchTerm, setSearchTerm] = useState("");
   const [sortBy, setSortBy] = useState<keyof MailerRow | null>(null);
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [filters, setFilters] = useState<MailerFilters>({ ...EMPTY_FILTERS });
   const [showFilters, setShowFilters] = useState(false);
-  const activeFilterCount = (Object.keys(filters) as (keyof MailerFilters)[]).filter((k) => filters[k] !== "").length;
 
-  let filteredRows = searchTerm.trim()
-    ? rows.filter((row) =>
-        SEARCHABLE_COLUMNS.some((col) => {
-          const val = row[col];
-          if (val === null || val === undefined) return false;
-          return String(val).toLowerCase().includes(searchTerm.toLowerCase());
-        })
-      )
-    : rows;
+  const isServerPaged = externalRows === undefined;
+  const [serverRows, setServerRows] = useState<MailerRow[]>([]);
+  const [serverTotal, setServerTotal] = useState(0);
+  const [serverLoading, setServerLoading] = useState(false);
+  const [serverError, setServerError] = useState<string | null>(null);
+  const [, startTransition] = useTransition();
 
-  // Apply structured filters
-  filteredRows = filteredRows.filter((row) => {
-    if (filters.min_open_rate) {
-      const min = parseFloat(filters.min_open_rate);
-      if (!isNaN(min) && (row.open_rate ?? 0) < min) return false;
-    }
-    if (filters.min_click_rate) {
-      const min = parseFloat(filters.min_click_rate);
-      if (!isNaN(min) && (row.click_rate ?? 0) < min) return false;
-    }
-    if (filters.min_unsubscribe_rate) {
-      const min = parseFloat(filters.min_unsubscribe_rate);
-      if (!isNaN(min) && (row.unsubscribe_rate ?? 0) < min) return false;
-    }
-    if (filters.min_hardbounce_rate) {
-      const min = parseFloat(filters.min_hardbounce_rate);
-      if (!isNaN(min) && (row.hardbounce_rate ?? 0) < min) return false;
-    }
-    if (filters.sent_after) {
-      const after = new Date(filters.sent_after).getTime();
-      if (!isNaN(after)) {
-        const sent = row.sent_date ? new Date(row.sent_date).getTime() : 0;
-        if (sent < after) return false;
-      }
-    }
-    if (filters.sent_before) {
-      const before = new Date(filters.sent_before).getTime();
-      if (!isNaN(before)) {
-        const sent = row.sent_date ? new Date(row.sent_date).getTime() : 0;
-        if (sent > before) return false;
-      }
-    }
-    if (filters.has_unsubscribed === "yes" && (row.unsubscribed_count ?? 0) === 0) return false;
-    if (filters.has_unsubscribed === "no"  && (row.unsubscribed_count ?? 0) > 0) return false;
-    if (filters.has_hardbounced === "yes" && (row.hardbounced_count ?? 0) === 0) return false;
-    if (filters.has_hardbounced === "no"  && (row.hardbounced_count ?? 0) > 0) return false;
-    return true;
-  });
+  const debouncedSearch = useDebounce(searchTerm, 300);
+  const debouncedFilters = useDebounce(filters, 200);
 
-  if (sortBy) {
-    filteredRows = [...filteredRows].sort((a, b) => {
-      const av = a[sortBy];
-      const bv = b[sortBy];
-      if (av === null || av === undefined) return 1;
-      if (bv === null || bv === undefined) return -1;
-      if (typeof av === "number" && typeof bv === "number") {
-        return sortDir === "asc" ? av - bv : bv - av;
-      }
-      const ac = String(av);
-      const bc = String(bv);
-      return sortDir === "asc" ? ac.localeCompare(bc) : bc.localeCompare(ac);
+  // Server-side fetch when in server-paged mode. Sort + filter + search all
+  // run in Postgres via the search_mailers RPC; the debounce keeps keystrokes
+  // cheap.
+  useEffect(() => {
+    if (!isServerPaged) return;
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled) return;
+      setServerLoading(true);
+      setServerError(null);
     });
-  }
+    const params = new URLSearchParams();
+    params.set("page", String(page));
+    params.set("pageSize", String(pageSize));
+    if (debouncedSearch.trim()) params.set("q", debouncedSearch.trim());
+    if (debouncedFilters.min_open_rate)        params.set("minOpen",   debouncedFilters.min_open_rate);
+    if (debouncedFilters.min_click_rate)       params.set("minClick",  debouncedFilters.min_click_rate);
+    if (debouncedFilters.min_unsubscribe_rate) params.set("minUnsub",  debouncedFilters.min_unsubscribe_rate);
+    if (debouncedFilters.min_hardbounce_rate)  params.set("minBounce", debouncedFilters.min_hardbounce_rate);
+    if (debouncedFilters.sent_after)            params.set("sentAfter", debouncedFilters.sent_after);
+    if (debouncedFilters.sent_before)           params.set("sentBefore", debouncedFilters.sent_before);
+    if (debouncedFilters.has_unsubscribed)      params.set("hasUnsub",  debouncedFilters.has_unsubscribed);
+    if (debouncedFilters.has_hardbounced)       params.set("hasBounced", debouncedFilters.has_hardbounced);
+    if (sortBy) { params.set("sortBy", String(sortBy)); params.set("sortDir", sortDir); }
 
-  const totalPages = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
-  const paginated  = filteredRows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+    fetch(`/api/mailers?${params.toString()}`)
+      .then(async (res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const json = await res.json();
+        if (cancelled) return;
+        startTransition(() => {
+          setServerRows((json.rows ?? []) as MailerRow[]);
+          setServerTotal(Number(json.total ?? 0));
+        });
+      })
+      .catch((err) => { if (!cancelled) setServerError(err instanceof Error ? err.message : String(err)); })
+      .finally(() => { if (!cancelled) setServerLoading(false); });
+    return () => { cancelled = true; };
+  }, [isServerPaged, page, pageSize, debouncedSearch, debouncedFilters, sortBy, sortDir, refreshToken]);
+
+  const rows: MailerRow[] = isServerPaged ? serverRows : (externalRows ?? []);
+  const total = isServerPaged ? serverTotal : (externalTotal ?? externalRows?.length ?? 0);
+  const loading = serverLoading;
+
+  const activeFilterCount = (Object.keys(filters) as (keyof MailerFilters)[]).filter((k) => filters[k] !== "").length;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const visibleCols = ALL_COLUMNS.filter((c) => VISIBLE_COLUMNS.includes(c.key));
 
-  const allOnPage = paginated.map((r) => r.mailer_id);
+  const allOnPage = rows.map((r) => r.mailer_id);
   const allSelected = allOnPage.length > 0 && allOnPage.every((id) => selected.has(id));
   const someSelected = allOnPage.some((id) => selected.has(id));
 
@@ -182,7 +188,9 @@ export default function MailersTable({
   }
 
   function downloadCSV(mode: "all" | "selected" = "all") {
-    const exportRows = mode === "selected" ? filteredRows.filter((r) => selected.has(r.mailer_id)) : filteredRows;
+    // CSV export uses ONLY the currently visible page (server-paged mode) or
+    // the override rows. For a full export use the SQL Query Box.
+    const exportRows = mode === "selected" ? rows.filter((r) => selected.has(r.mailer_id)) : rows;
     if (exportRows.length === 0) return;
     const headers = ALL_COLUMNS.map((c) => c.label);
     const rows_data = exportRows.map((row) =>
@@ -258,16 +266,24 @@ export default function MailersTable({
   return (
     <div className="flex flex-col h-full">
       <div className="space-y-2 px-2 sm:px-4 py-3 border-b border-gray-200 bg-white">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <h2 className="text-sm font-semibold text-gray-700">Mailers</h2>
           <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">
-            {filteredRows.length} {filteredRows.length === 1 ? "mailer" : "mailers"}
-            {searchTerm && ` (${rows.length} total)`}
+            {total} {total === 1 ? "mailer" : "mailers"}
+            {loading && isServerPaged && <span className="ml-1 text-blue-500">…</span>}
           </span>
           {selected.size > 0 && (
             <span className="text-xs bg-orange-100 text-orange-600 px-2 py-0.5 rounded-full">
               {selected.size} selected
             </span>
+          )}
+          {activeFilterCount > 0 && (
+            <span className="text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full">
+              {activeFilterCount} filter{activeFilterCount > 1 ? "s" : ""}
+            </span>
+          )}
+          {serverError && (
+            <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full" title={serverError}>Error</span>
           )}
           {sortBy && (
             <button
@@ -314,19 +330,22 @@ export default function MailersTable({
               <span className="bg-gray-600 text-white text-[10px] px-1.5 rounded-full">{activeFilterCount}</span>
             )}
           </button>
-          <div className="relative">
+          <div className="relative flex-1 min-w-[120px]">
             <input
               type="text"
               value={searchTerm}
               onChange={(e) => { setSearchTerm(e.target.value); onPageChange(1); }}
               placeholder="Search subject / ID..."
-              className="flex-1 min-w-[120px] pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-100 focus:border-blue-300 placeholder-gray-400"
+              className="w-full pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-100 focus:border-blue-300 placeholder-gray-400"
             />
+            {loading && isServerPaged && (
+              <svg className="w-3.5 h-3.5 absolute right-2.5 top-1/2 -translate-y-1/2 text-blue-500 animate-spin" fill="none" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeOpacity="0.25" /><path fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" /></svg>
+            )}
             <svg className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
             </svg>
           </div>
-          <button onClick={() => downloadCSV(selected.size > 0 ? "selected" : "all")} className="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors flex items-center gap-1.5" title={selected.size > 0 ? `Export ${selected.size} selected` : "Export all visible"}>
+          <button onClick={() => downloadCSV(selected.size > 0 ? "selected" : "all")} className="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors flex items-center gap-1.5" title={selected.size > 0 ? `Export ${selected.size} selected` : `Export current page (${rows.length})`}>
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
             </svg>
@@ -453,9 +472,9 @@ export default function MailersTable({
 
       {/* Horizontal-scroll wrapper */}
       <div className="flex-1 overflow-auto">
-        {filteredRows.length === 0 ? (
+        {rows.length === 0 && !loading ? (
           <div className="flex items-center justify-center h-full text-sm text-gray-400">
-            {searchTerm ? "No mailers match your search." : "No mailers yet. Click 'Add Mailer' to create your first campaign."}
+            {searchTerm || activeFilterCount > 0 ? "No mailers match your search." : "No mailers yet. Click 'Add Mailer' to create your first campaign."}
           </div>
         ) : (
           <table className="min-w-max text-sm border-collapse">
@@ -487,7 +506,7 @@ export default function MailersTable({
               </tr>
             </thead>
             <tbody>
-              {paginated.map((row, i) => (
+              {rows.map((row, i) => (
                 <tr
                   key={row.mailer_id}
                   onDoubleClick={() => onEdit(row)}
@@ -524,8 +543,8 @@ export default function MailersTable({
       <div className="flex items-center justify-between px-4 py-2.5 border-t border-gray-200 bg-gray-50 text-xs text-gray-500">
         <p>
           {selected.size > 0
-            ? `${selected.size} of ${rows.length} selected`
-            : rows.length === 0 ? "No mailers" : `Showing ${Math.min((page - 1) * PAGE_SIZE + 1, rows.length)}–${Math.min(page * PAGE_SIZE, rows.length)} of ${rows.length}`}
+            ? `${selected.size} selected`
+            : total === 0 ? "No mailers" : `Showing ${Math.min((page - 1) * pageSize + 1, total)}–${Math.min(page * pageSize, total)} of ${total}`}
         </p>
         <div className="flex items-center gap-1">
           <button

@@ -116,7 +116,8 @@ export async function GET(req: NextRequest) {
         const inArrays =
           (Array.isArray(r.tags)        && (r.tags        as string[]).some((t) => t.toLowerCase().includes(needle))) ||
           (Array.isArray(r.sector)      && (r.sector      as string[]).some((t) => t.toLowerCase().includes(needle))) ||
-          (Array.isArray(r.source)      && (r.source      as string[]).some((t) => t.toLowerCase().includes(needle)));
+          (Array.isArray(r.source)      && (r.source      as string[]).some((t) => t.toLowerCase().includes(needle))) ||
+          (Array.isArray(r.assigned_to) && (r.assigned_to as string[]).some((t) => t.toLowerCase().includes(needle)));
         if (!hay.includes(needle) && !inArrays) return false;
       }
       return true;

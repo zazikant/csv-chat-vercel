@@ -3,6 +3,7 @@
 import { useEffect, useState, useTransition } from "react";
 import { MainContactRow } from "@/lib/langgraph/state";
 import { useDebounce } from "@/hooks/useDebounce";
+import SearchableFilter from "@/components/SearchableFilter";
 
 const ALL_COLUMNS: { key: keyof MainContactRow; label: string }[] = [
   { key: "name",        label: "Name" },
@@ -34,6 +35,15 @@ interface Filters {
 }
 const EMPTY_FILTERS: Filters = { optin_status: "", city: "", sector: "", source: "", tag: "", assigned_to: "" };
 
+interface FilterOptions {
+  city: string[];
+  sector: string[];
+  source: string[];
+  tags: string[];
+  assigned_to: string[];
+}
+const EMPTY_FILTER_OPTIONS: FilterOptions = { city: [], sector: [], source: [], tags: [], assigned_to: [] };
+
 interface Props {
   // Legacy: keep accepting pre-loaded rows (e.g. SQL query result overrides)
   rows?: MainContactRow[];
@@ -42,6 +52,10 @@ interface Props {
   pageSize?: number;
   total?: number;
   loading?: boolean;
+  // Incremented by the parent after any mutation (save/delete/upload).
+  // Bumping it refetches the current page — without this, edits made on
+  // page 1 with unchanged filters would leave the table stale.
+  refreshToken?: number;
   onPageChange: (page: number) => void;
   onReset?: () => void;
   onEdit: (row: MainContactRow) => void;
@@ -79,6 +93,7 @@ export default function MainDatabaseTable(props: Props) {
     pageSize = PAGE_SIZE,
     total: externalTotal,
     loading: externalLoading,
+    refreshToken,
     onPageChange,
     onReset,
     onEdit,
@@ -106,13 +121,51 @@ export default function MainDatabaseTable(props: Props) {
   const debouncedSearch = useDebounce(searchTerm, 300);
   const debouncedFilters = useDebounce(filters, 200);
 
-  // Build dropdown option lists from the rows we currently have.
+  // Full-table filter option lists (fetched from /api/main-contacts/options
+  // when the Filters panel opens). The visible 25-row page can't provide
+  // complete lists — e.g. the "qto" tag exists on 112 contacts spread across
+  // pages, so page-derived dropdowns would never list it.
+  const [filterOptions, setFilterOptions] = useState<FilterOptions>(EMPTY_FILTER_OPTIONS);
+  const [optionsLoaded, setOptionsLoaded] = useState(false);
+
+  useEffect(() => {
+    if (!showFilters || !isServerPaged) return;
+    let cancelled = false;
+    fetch("/api/main-contacts/options")
+      .then(async (res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      })
+      .then((json) => {
+        if (cancelled) return;
+        startTransition(() => {
+          setFilterOptions({
+            city: Array.isArray(json.city) ? json.city : [],
+            sector: Array.isArray(json.sector) ? json.sector : [],
+            source: Array.isArray(json.source) ? json.source : [],
+            tags: Array.isArray(json.tags) ? json.tags : [],
+            assigned_to: Array.isArray(json.assigned_to) ? json.assigned_to : [],
+          });
+          setOptionsLoaded(true);
+        });
+      })
+      .catch(() => {
+        // Keep page-derived options on failure — dropdowns still work,
+        // just possibly incomplete.
+      });
+    return () => { cancelled = true; };
+  }, [showFilters, isServerPaged, startTransition]);
+
+  // Build dropdown option lists. When the full option lists are loaded, use
+  // them; otherwise (panel never opened / fetch failed / override mode) fall
+  // back to deriving from the rows we currently have.
+  const useFullOptions = isServerPaged && optionsLoaded;
   const sourceForOptions = isServerPaged ? serverRows : (externalRows ?? []);
-  const cityOptions = Array.from(new Set(sourceForOptions.map((r) => r.city).filter((x): x is string => !!x))).sort();
-  const sectorOptions = Array.from(new Set(sourceForOptions.flatMap((r) => Array.isArray(r.sector) ? r.sector : []))).sort();
-  const sourceOptions = Array.from(new Set(sourceForOptions.flatMap((r) => Array.isArray(r.source) ? r.source : []))).sort();
-  const tagOptions = Array.from(new Set(sourceForOptions.flatMap((r) => Array.isArray(r.tags) ? r.tags : []))).sort();
-  const assignedToOptions = Array.from(new Set(sourceForOptions.flatMap((r) => Array.isArray(r.assigned_to) ? r.assigned_to : []))).sort();
+  const cityOptions = useFullOptions ? filterOptions.city : Array.from(new Set(sourceForOptions.map((r) => r.city).filter((x): x is string => !!x))).sort();
+  const sectorOptions = useFullOptions ? filterOptions.sector : Array.from(new Set(sourceForOptions.flatMap((r) => Array.isArray(r.sector) ? r.sector : []))).sort();
+  const sourceOptions = useFullOptions ? filterOptions.source : Array.from(new Set(sourceForOptions.flatMap((r) => Array.isArray(r.source) ? r.source : []))).sort();
+  const tagOptions = useFullOptions ? filterOptions.tags : Array.from(new Set(sourceForOptions.flatMap((r) => Array.isArray(r.tags) ? r.tags : []))).sort();
+  const assignedToOptions = useFullOptions ? filterOptions.assigned_to : Array.from(new Set(sourceForOptions.flatMap((r) => Array.isArray(r.assigned_to) ? r.assigned_to : []))).sort();
   const activeFilterCount = (Object.keys(filters) as (keyof Filters)[]).filter((k) => filters[k] !== "").length;
 
   // Server-side fetch when in server-paged mode.
@@ -151,7 +204,7 @@ export default function MainDatabaseTable(props: Props) {
       .catch((err) => { if (!cancelled) setServerError(err instanceof Error ? err.message : String(err)); })
       .finally(() => { if (!cancelled) setServerLoading(false); });
     return () => { cancelled = true; };
-  }, [isServerPaged, page, pageSize, debouncedSearch, debouncedFilters]);
+  }, [isServerPaged, page, pageSize, debouncedSearch, debouncedFilters, refreshToken]);
 
   const rows: MainContactRow[] = isServerPaged ? serverRows : (externalRows ?? []);
   const total = isServerPaged ? serverTotal : (externalTotal ?? externalRows?.length ?? 0);
@@ -252,7 +305,7 @@ export default function MainDatabaseTable(props: Props) {
       {showFilters && (
         <div className="px-2 sm:px-4 py-3 border-b border-gray-200 bg-gray-50/70 flex flex-wrap items-end gap-3">
           <FilterSelect label="Opt-in" value={filters.optin_status} onChange={(v) => { setFilters((f) => ({ ...f, optin_status: v })); onPageChange(1); }} options={[{ value: "", label: "Any status" }, { value: "Subscribed", label: "Subscribed" }, { value: "Hard Bounced", label: "Hard Bounced" }, { value: "Unsubscribed", label: "Unsubscribed" }]} />
-          <FilterSelect label="City" value={filters.city} onChange={(v) => { setFilters((f) => ({ ...f, city: v })); onPageChange(1); }} options={[{ value: "", label: "Any city" }, ...cityOptions.map((c) => ({ value: c, label: c }))]} />
+          <SearchableFilter label="City" value={filters.city} onChange={(v) => { setFilters((f) => ({ ...f, city: v })); onPageChange(1); }} options={cityOptions} />
           <SearchableFilter label="Sector" value={filters.sector} onChange={(v) => { setFilters((f) => ({ ...f, sector: v })); onPageChange(1); }} options={sectorOptions} />
           <SearchableFilter label="Source" value={filters.source} onChange={(v) => { setFilters((f) => ({ ...f, source: v })); onPageChange(1); }} options={sourceOptions} />
           <SearchableFilter label="Assigned To" value={filters.assigned_to} onChange={(v) => { setFilters((f) => ({ ...f, assigned_to: v })); onPageChange(1); }} options={assignedToOptions} />
@@ -317,61 +370,3 @@ function FilterSelect({ label, value, onChange, options }: { label: string; valu
   );
 }
 
-/** Searchable filter with search box — for Sector, Source, Tag (which can have many values). */
-function SearchableFilter({ label, value, onChange, options }: { label: string; value: string; onChange: (v: string) => void; options: string[] }) {
-  const [search, setSearch] = useState("");
-  const [open, setOpen] = useState(false);
-  const filtered = search.trim()
-    ? options.filter((o) => o.toLowerCase().includes(search.toLowerCase()))
-    : options;
-
-  return (
-    <div className="flex flex-col gap-1 relative">
-      <label className="text-[10px] font-medium text-gray-500 uppercase tracking-wider">{label}</label>
-      <button
-        onClick={() => setOpen((o) => !o)}
-        className="px-2 py-1.5 text-xs text-gray-900 border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-100 focus:border-blue-300 bg-white min-w-[120px] flex items-center justify-between gap-1"
-      >
-        <span className={value ? "text-gray-900" : "text-gray-400"}>{value || `Any ${label.toLowerCase()}`}</span>
-        <svg className={`w-3 h-3 text-gray-400 transition-transform ${open ? "rotate-180" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
-      </button>
-      {open && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={() => { setOpen(false); setSearch(""); }} />
-          <div className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-xl max-h-60 overflow-hidden flex flex-col">
-            <div className="p-2 border-b border-gray-100">
-              <input
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder={`Search ${label.toLowerCase()}...`}
-                className="w-full px-2 py-1 text-xs border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-100"
-                autoFocus
-              />
-            </div>
-            <div className="overflow-y-auto flex-1">
-              <button
-                onClick={() => { onChange(""); setOpen(false); setSearch(""); }}
-                className={`w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50 ${!value ? "bg-blue-50 text-blue-700 font-medium" : "text-gray-700"}`}
-              >
-                Any {label.toLowerCase()}
-              </button>
-              {filtered.map((opt) => (
-                <button
-                  key={opt}
-                  onClick={() => { onChange(opt); setOpen(false); setSearch(""); }}
-                  className={`w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50 ${value === opt ? "bg-blue-50 text-blue-700 font-medium" : "text-gray-700"}`}
-                >
-                  {opt}
-                </button>
-              ))}
-              {filtered.length === 0 && (
-                <div className="px-3 py-2 text-xs text-gray-400">No matches</div>
-              )}
-            </div>
-          </div>
-        </>
-      )}
-    </div>
-  );
-}

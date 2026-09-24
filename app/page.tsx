@@ -17,12 +17,6 @@ import { MainContactRow, ContactRow, MailerRow } from "@/lib/langgraph/state";
 type TabKey = "main" | "contacts" | "mailers";
 type MobileView = "table" | "chat";
 
-async function fetchAllMailers(): Promise<MailerRow[]> {
-  const res = await fetch("/api/mailers");
-  if (!res.ok) return [];
-  return res.json();
-}
-
 export default function HomePage() {
   return (
     <Suspense fallback={<FullScreenLoading />}>
@@ -53,13 +47,17 @@ function HomePageInner() {
   const [mainTotalOverride, setMainTotalOverride] = useState<number | null>(null);
   const [totalMailsSent, setTotalMailsSent] = useState<Map<string, number>>(new Map());
 
-  // Contacts (engagement) — small table (266 rows), keep client-side.
-  const [contactRows, setContactRows] = useState<ContactRow[]>([]);
+  // Contacts / Mailers: same pattern — server-paged by default, override rows
+  // only when a SQL chat / SQL box result replaces the visible table.
   const [contactPage, setContactPage] = useState(1);
-
-  // Mailers
-  const [mailers, setMailers] = useState<MailerRow[]>([]);
+  const [contactRowsOverride, setContactRowsOverride] = useState<ContactRow[] | null>(null);
   const [mailerPage, setMailerPage] = useState(1);
+  const [mailersOverride, setMailersOverride] = useState<MailerRow[] | null>(null);
+
+  // Bumped after every mutation (save / delete / upload). Passed to all three
+  // tables as refreshToken — refetches their current server-paged page.
+  const [dataVersion, setDataVersion] = useState(0);
+  function bumpDataVersion() { setDataVersion((v) => v + 1); }
 
   // Modals
   const [mainEditRecord, setMainEditRecord] = useState<MainContactRow | null>(null);
@@ -85,18 +83,6 @@ function HomePageInner() {
     return () => { cancelled = true; };
   }, []);
 
-  async function reloadAllContacts() {
-    try {
-      const res = await fetch("/api/contacts");
-      if (res.ok) setContactRows(await res.json());
-    } catch { /* non-fatal */ }
-  }
-  function reloadContacts() {
-    // Defer state-setter to next microtask so it's not synchronously invoked
-    // from a useEffect body (React 19 / Next 16 strict rule).
-    queueMicrotask(() => { void reloadAllContacts(); });
-  }
-  function reloadMailers() { fetchAllMailers().then(setMailers); }
   function reloadMailCounts() {
     fetch("/api/main-contacts/mail-counts")
       .then((r) => (r.ok ? r.json() : {}))
@@ -104,20 +90,13 @@ function HomePageInner() {
       .catch(() => {});
   }
 
-  useEffect(() => {
-    queueMicrotask(() => {
-      void reloadAllContacts();
-      reloadMailers();
-    });
-  }, []);
-
   // Main Database handlers
   async function handleDeleteMainRows(emails: string[]) {
     await fetch("/api/main-contacts", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ emails }) });
     setMainRowsOverride(null);
     setMainTotalOverride(null);
-    reloadAllContacts();
     reloadMailCounts();
+    bumpDataVersion();
   }
   async function handleBulkDeleteMain(emails: string[]): Promise<{ deleted: number; notFound: string[] }> {
     const unique = Array.from(new Set(emails.map((e) => e.toLowerCase())));
@@ -129,46 +108,41 @@ function HomePageInner() {
     }
     setMainRowsOverride(null);
     setMainTotalOverride(null);
-    reloadAllContacts();
     reloadMailCounts();
+    bumpDataVersion();
     return { deleted: unique.length, notFound };
   }
 
   // Contacts handlers
   async function handleDeleteRows(ids: string[]) {
     await fetch("/api/contacts", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids }) });
-    reloadContacts();
+    reloadMailCounts();
+    bumpDataVersion();
   }
   async function handleBulkDeleteContacts(emails: string[]): Promise<{ deleted: number; notFound: string[] }> {
     const unique = Array.from(new Set(emails.map((e) => e.toLowerCase())));
-    const existingEmails = new Set(contactRows.map((r) => r.email.toLowerCase()));
-    const toDelete = unique.filter((e) => existingEmails.has(e));
-    const notFound = unique.filter((e) => !existingEmails.has(e));
-    if (toDelete.length > 0) {
-      const ids = contactRows.filter((r) => toDelete.includes(r.email.toLowerCase())).map((r) => r.id);
-      if (ids.length > 0) {
-        await fetch("/api/contacts", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids }) });
-        reloadContacts();
-      }
+    if (unique.length > 0) {
+      // Server-paged mode: the browser no longer holds the full table, so
+      // email → id mapping + deletion happen server-side (DELETE by emails).
+      await fetch("/api/contacts", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ emails: unique }) });
+      reloadMailCounts();
+      bumpDataVersion();
     }
-    return { deleted: toDelete.length, notFound };
+    return { deleted: unique.length, notFound: [] };
   }
 
   // Mailers handlers
   async function handleDeleteMailers(ids: string[]) {
     await fetch("/api/mailers", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mailer_ids: ids }) });
-    reloadMailers();
+    bumpDataVersion();
   }
   async function handleBulkDeleteMailers(mailerIds: string[]): Promise<{ deleted: number; notFound: string[] }> {
     const unique = Array.from(new Set(mailerIds));
-    const existing = new Set(mailers.map((m) => m.mailer_id));
-    const toDelete = unique.filter((id) => existing.has(id));
-    const notFound = unique.filter((id) => !existing.has(id));
-    if (toDelete.length > 0) {
-      await fetch("/api/mailers", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mailer_ids: toDelete }) });
-      reloadMailers();
+    if (unique.length > 0) {
+      await fetch("/api/mailers", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mailer_ids: unique }) });
+      bumpDataVersion();
     }
-    return { deleted: toDelete.length, notFound };
+    return { deleted: unique.length, notFound: [] };
   }
 
   function handleSqlResult(rows: Record<string, unknown>[]) {
@@ -177,8 +151,8 @@ function HomePageInner() {
       setMainTotalOverride(rows.length);
       setMainPage(1);
     }
-    else if (tab === "contacts") { setContactRows(rows as unknown as ContactRow[]); setContactPage(1); }
-    else { setMailers(rows as unknown as MailerRow[]); setMailerPage(1); }
+    else if (tab === "contacts") { setContactRowsOverride(rows as unknown as ContactRow[]); setContactPage(1); }
+    else { setMailersOverride(rows as unknown as MailerRow[]); setMailerPage(1); }
     setMobileView("table");
   }
 
@@ -189,8 +163,8 @@ function HomePageInner() {
       setMainTotalOverride(rows.length);
       setMainPage(1);
     }
-    else if (tab === "contacts") { setContactRows(rows as unknown as ContactRow[]); setContactPage(1); }
-    else { setMailers(rows as unknown as MailerRow[]); setMailerPage(1); }
+    else if (tab === "contacts") { setContactRowsOverride(rows as unknown as ContactRow[]); setContactPage(1); }
+    else { setMailersOverride(rows as unknown as MailerRow[]); setMailerPage(1); }
     setMobileView("table");
   }
 
@@ -199,11 +173,19 @@ function HomePageInner() {
     setMainTotalOverride(null);
     setMainPage(1);
   }
+  function handleContactsReset() {
+    setContactRowsOverride(null);
+    setContactPage(1);
+  }
+  function handleMailersReset() {
+    setMailersOverride(null);
+    setMailerPage(1);
+  }
 
-  // Counts shown on tab buttons
-  const mainCount = mainRowsOverride ? mainRowsOverride.length : null; // null = "server will show"
-  const contactCount = contactRows.length;
-  const mailerCount = mailers.length;
+  // Counts shown on tab buttons (null = "server will show")
+  const mainCount = mainRowsOverride ? mainRowsOverride.length : null;
+  const contactCount = contactRowsOverride ? contactRowsOverride.length : null;
+  const mailerCount = mailersOverride ? mailersOverride.length : null;
 
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
@@ -228,6 +210,7 @@ function HomePageInner() {
               totalMailsSent={totalMailsSent}
               page={mainPage}
               onPageChange={setMainPage}
+              refreshToken={dataVersion}
               onReset={mainRowsOverride ? handleMainReset : undefined}
               onEdit={(r) => { setMainEditRecord(r); setMainEditMode("edit"); }}
               onAdd={() => { setMainEditRecord(null); setMainEditMode("add"); }}
@@ -237,10 +220,11 @@ function HomePageInner() {
             />
           ) : tab === "contacts" ? (
             <ContactsTable
-              rows={contactRows}
+              rows={contactRowsOverride ?? undefined}
               page={contactPage}
               onPageChange={setContactPage}
-              onReset={reloadContacts}
+              refreshToken={dataVersion}
+              onReset={contactRowsOverride ? handleContactsReset : undefined}
               onEdit={(r) => { setEditRecord(r); setEditMode("edit"); }}
               onAdd={() => { setEditRecord(null); setEditMode("add"); }}
               onUpload={() => setShowUpload(true)}
@@ -249,10 +233,11 @@ function HomePageInner() {
             />
           ) : (
             <MailersTable
-              rows={mailers}
+              rows={mailersOverride ?? undefined}
               page={mailerPage}
               onPageChange={setMailerPage}
-              onReset={reloadMailers}
+              refreshToken={dataVersion}
+              onReset={mailersOverride ? handleMailersReset : undefined}
               onEdit={(r) => { setMailerRecord(r); setMailerMode("edit"); }}
               onAdd={() => { setMailerRecord(null); setMailerMode("add"); }}
               onBulkDelete={() => setShowBulkDelete(true)}
@@ -276,17 +261,17 @@ function HomePageInner() {
       </div>
 
       {tab === "main" && (mainEditRecord !== null || mainEditMode === "add") && (
-        <MainEditModal record={mainEditRecord} mode={mainEditMode} onClose={() => { setMainEditRecord(null); setMainEditMode("edit"); }} onSave={() => { handleMainReset(); reloadMailCounts(); reloadAllContacts(); }} />
+        <MainEditModal record={mainEditRecord} mode={mainEditMode} onClose={() => { setMainEditRecord(null); setMainEditMode("edit"); }} onSave={() => { handleMainReset(); reloadMailCounts(); bumpDataVersion(); }} />
       )}
       {tab === "contacts" && (editRecord !== null || editMode === "add") && (
-        <EditModal record={editRecord} mode={editMode} onClose={() => { setEditRecord(null); setEditMode("edit"); }} onSave={reloadContacts} />
+        <EditModal record={editRecord} mode={editMode} onClose={() => { setEditRecord(null); setEditMode("edit"); }} onSave={() => { reloadMailCounts(); bumpDataVersion(); }} />
       )}
       {tab === "mailers" && (mailerRecord !== null || mailerMode === "add") && (
-        <MailerEditModal record={mailerRecord} mode={mailerMode} onClose={() => { setMailerRecord(null); setMailerMode("edit"); }} onSave={reloadMailers} />
+        <MailerEditModal record={mailerRecord} mode={mailerMode} onClose={() => { setMailerRecord(null); setMailerMode("edit"); }} onSave={() => { bumpDataVersion(); }} />
       )}
 
       {showUpload && (
-        <CSVUploadModal onClose={() => setShowUpload(false)} onUpload={() => { setShowUpload(false); handleMainReset(); reloadAllContacts(); reloadMailCounts(); }} tab={tab} />
+        <CSVUploadModal onClose={() => setShowUpload(false)} onUpload={() => { setShowUpload(false); handleMainReset(); reloadMailCounts(); bumpDataVersion(); }} tab={tab} />
       )}
       {showBulkDelete && (
         <BulkDeleteModal
