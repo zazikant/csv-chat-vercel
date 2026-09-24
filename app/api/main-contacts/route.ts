@@ -23,9 +23,14 @@ function normalizeOptinStatus(raw: string | undefined | null): string {
 }
 
 export async function GET() {
+  // Default sort: latest-added contact at top.
+  // created_date is a date (YYYY-MM-DD) — many rows share the same date,
+  // so we tiebreak with created_at (full timestamp) and then email for stability.
   const { data, error } = await supabase
     .from("main_contacts")
     .select("*")
+    .order("created_date", { ascending: false, nullsFirst: false })
+    .order("created_at", { ascending: false, nullsFirst: false })
     .order("email", { ascending: true });
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json(data);
