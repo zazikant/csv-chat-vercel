@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
+import { normalizePhone } from "@/lib/normalizePhone";
 
 export const runtime = "nodejs";
 
@@ -60,7 +61,11 @@ export async function POST(req: NextRequest) {
       name: r.name ? String(r.name).trim() : null,
       company: r.company ? String(r.company).trim() : null,
       designation: r.designation ? String(r.designation).trim() : null,
-      phone: r.phone ? String(r.phone).trim() : null,
+      // Defensive: expand scientific notation from Excel exports
+      // (e.g. "9.71529E+11" → "971529000000"). The CSV upload modal
+      // already does this client-side, but we repeat it here so any
+      // programmatic API caller gets the same treatment.
+      phone: normalizePhone(r.phone),
       city: r.city ? String(r.city).trim() : null,
       sector: normalizeArray(r.sector),
       tags: normalizeArray(r.tags),

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { normalizePhone } from "@/lib/normalizePhone";
 
 const CONTACTS_HEADERS = ["email", "mailer_id", "opens", "clicks", "optin_status"];
 const CONTACTS_LABELS: Record<string, string> = { email: "Email", mailer_id: "Mailer ID", opens: "Opens", clicks: "Clicks", optin_status: "Opt-in Status" };
@@ -66,7 +67,11 @@ export default function CSVUploadModal({ onClose, onUpload, tab }: Props) {
 
     if (isMain) {
       str(row.name, "name"); str(row.company, "company"); str(row.designation, "designation");
-      str(row.phone, "phone"); str(row.city, "city");
+      // Phone: Excel may have exported large numbers in scientific notation
+      // (e.g. "9.71529E+11"). Expand back to plain digits.
+      const phone = normalizePhone(row.phone);
+      if (phone) data.phone = phone;
+      str(row.city, "city");
       arr(row.sector, "sector"); arr(row.source, "source"); arr(row.tags, "tags");
       str(row.optin_status, "optin_status"); str(row.remarks, "remarks");
     } else {

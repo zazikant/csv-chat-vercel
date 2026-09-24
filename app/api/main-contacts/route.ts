@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 import { fetchAll } from "@/lib/fetchAll";
+import { normalizePhone } from "@/lib/normalizePhone";
 
 function normalizeArray(val: unknown): string[] {
   if (!Array.isArray(val)) return [];
@@ -55,6 +56,13 @@ export async function POST(req: NextRequest) {
   if (body.source !== undefined) body.source = normalizeArray(body.source);
   if (body.assigned_to !== undefined) body.assigned_to = normalizeArray(body.assigned_to);
   if (body.optin_status !== undefined) body.optin_status = normalizeOptinStatus(body.optin_status);
+  // Phone: expand scientific notation from Excel exports
+  // (e.g. "9.71529E+11" → "971529000000"). Empty string is preserved
+  // (so the user can intentionally clear the field).
+  if (body.phone !== undefined && body.phone !== null && body.phone !== "") {
+    const expanded = normalizePhone(body.phone);
+    if (expanded !== null) body.phone = expanded;
+  }
   // created_date is server-managed (set once on INSERT, never updated).
   // Strip it from incoming payloads to prevent client override.
   for (const f of ["created_at", "updated_at", "created_date"]) delete body[f];
@@ -133,6 +141,11 @@ export async function PUT(req: NextRequest) {
   if (fields.source !== undefined) fields.source = normalizeArray(fields.source);
   if (fields.assigned_to !== undefined) fields.assigned_to = normalizeArray(fields.assigned_to);
   if (fields.optin_status !== undefined) fields.optin_status = normalizeOptinStatus(fields.optin_status);
+  // Phone: expand scientific notation from Excel exports
+  if (fields.phone !== undefined && fields.phone !== null && fields.phone !== "") {
+    const expanded = normalizePhone(fields.phone);
+    if (expanded !== null) fields.phone = expanded;
+  }
 
   // MERGE SEMANTICS: fetch the existing record first.
   // For each field in the payload:
