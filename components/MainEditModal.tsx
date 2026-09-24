@@ -53,8 +53,9 @@ export default function MainEditModal({ record, mode, onClose, onSave }: Props) 
     try {
       const payload: Record<string, unknown> = {};
       // Send ALL fields that exist in the form
+      // (created_at, updated_at, created_date are server-managed — never sent from client)
       for (const [k, v] of Object.entries(form)) {
-        if (k === "created_at" || k === "updated_at") continue;
+        if (k === "created_at" || k === "updated_at" || k === "created_date") continue;
         payload[k] = v;
       }
       if (mode === "edit") {

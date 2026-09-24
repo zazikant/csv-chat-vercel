@@ -17,17 +17,18 @@ const ALL_COLUMNS: { key: keyof MainContactRow; label: string }[] = [
   { key: "optin_status", label: "Opt-in" },
   { key: "remarks",     label: "Remarks" },
   { key: "location",    label: "Location" },
+  { key: "created_date", label: "Created Date" },
 ];
 
 const VISIBLE_COLUMNS: (keyof MainContactRow)[] = [
   "name", "company", "designation", "email", "phone",
-  "city", "sector", "source", "assigned_to", "tags", "optin_status", "remarks", "location",
+  "city", "sector", "source", "assigned_to", "tags", "optin_status", "remarks", "location", "created_date",
 ];
 
 const TOTAL_MAILS_SENT_KEY = "_total_mails_sent" as keyof MainContactRow;
 const PAGE_SIZE = 25;
 const SEARCHABLE_COLUMNS: (keyof MainContactRow)[] = [
-  "name", "company", "designation", "email", "phone", "city", "remarks", "optin_status", "location",
+  "name", "company", "designation", "email", "phone", "city", "remarks", "optin_status", "location", "created_date",
 ];
 
 interface Filters {
@@ -138,7 +139,16 @@ export default function MainDatabaseTable({
     if (val === null || val === undefined) return "—";
     if (key === "tags" || key === "sector" || key === "source" || key === "assigned_to") return renderChips(val);
     if (key === "remarks" || key === "location") { const s = String(val); return s.length > 40 ? s.slice(0, 40) + "…" : s; }
+    if (key === "created_date") { return <span className="font-mono">{formatDate(String(val))}</span>; }
     return String(val);
+  }
+
+  function formatDate(iso: string): string {
+    // Accepts YYYY-MM-DD (or full ISO timestamp) and returns DD MMM YYYY.
+    const datePart = iso.slice(0, 10);
+    const d = new Date(datePart + "T00:00:00Z");
+    if (isNaN(d.getTime())) return iso;
+    return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" });
   }
 
   function getCellClass(key: keyof MainContactRow, val: unknown): string {
@@ -153,6 +163,7 @@ export default function MainDatabaseTable({
       if (s === "Hard Bounced") return "text-orange-600";
     }
     if (key === "remarks" || key === "location") return "text-gray-500 text-xs";
+    if (key === "created_date") return "text-gray-500 text-xs";
     return "text-gray-700";
   }
 

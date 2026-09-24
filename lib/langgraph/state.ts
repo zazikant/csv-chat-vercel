@@ -29,6 +29,8 @@ export interface MainContactRow {
   optin_status: string | null;
   remarks: string | null;
   location: string | null;
+  // Auto-set on INSERT (YYYY-MM-DD). Never updated after that.
+  created_date: string | null;
 }
 
 // ---- contacts (engagement — multiple rows per email, one per mailer) -------

@@ -15,6 +15,10 @@ interface CleanedRow {
   source: string[];
   optin_status: string;
   remarks: string | null;
+  // created_date is intentionally OMITTED from upsert payload so that:
+  //   - For NEW rows: the DB DEFAULT CURRENT_DATE kicks in.
+  //   - For EXISTING rows: upsert only updates the columns above, leaving
+  //     created_date untouched (preserves the original creation date).
 }
 
 function normalizeArray(val: unknown): string[] {

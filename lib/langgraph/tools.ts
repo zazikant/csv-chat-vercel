@@ -30,6 +30,7 @@ Columns:
   - optin_status   text        "Subscribed" | "Hard Bounced" | "Unsubscribed"
   - remarks       text        Free-text notes
   - location      text        Location (plain text). e.g. "Mumbai, Maharashtra"
+  - created_date  date        Auto-set on INSERT (YYYY-MM-DD). Date the contact was first added. Never updated.
 
 Common queries:
   Show all: SELECT * FROM main_contacts ORDER BY email;
@@ -42,6 +43,9 @@ Common queries:
   Unsubscribed: SELECT * FROM main_contacts WHERE optin_status = 'Unsubscribed';
   Hard bounced: SELECT * FROM main_contacts WHERE optin_status = 'Hard Bounced';
   By email: SELECT * FROM main_contacts WHERE email ILIKE '%rajmohan%';
+  Added this month: SELECT * FROM main_contacts WHERE created_date >= date_trunc('month', CURRENT_DATE);
+  Added in last 7 days: SELECT * FROM main_contacts WHERE created_date >= CURRENT_DATE - INTERVAL '7 days';
+  Newest contacts: SELECT * FROM main_contacts ORDER BY created_date DESC NULLS LAST, email;
 
 RULES: ALWAYS use SELECT *. Use ILIKE for text matches. For tags/sector/source, use EXISTS + unnest + ILIKE for partial matches (e.g. searching 'structural' should match 'structural audit gujarat'). End with semicolon.
 `.trim();

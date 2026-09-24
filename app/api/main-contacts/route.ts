@@ -40,7 +40,9 @@ export async function POST(req: NextRequest) {
   if (body.source !== undefined) body.source = normalizeArray(body.source);
   if (body.assigned_to !== undefined) body.assigned_to = normalizeArray(body.assigned_to);
   if (body.optin_status !== undefined) body.optin_status = normalizeOptinStatus(body.optin_status);
-  for (const f of ["created_at", "updated_at"]) delete body[f];
+  // created_date is server-managed (set once on INSERT, never updated).
+  // Strip it from incoming payloads to prevent client override.
+  for (const f of ["created_at", "updated_at", "created_date"]) delete body[f];
 
   // Check if email already exists — if so, use MERGE logic (same as PUT):
   // only update fields with non-empty values; preserve existing DB values
@@ -90,10 +92,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(updateResult, { status: 200 });
   }
 
-  // Email doesn't exist — INSERT new record
+  // Email doesn't exist — INSERT new record.
+  // Set created_date to today (YYYY-MM-DD, India timezone).
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+  const insertPayload = { ...body, created_date: today };
   const { data: insertData, error: insertError } = await supabase
     .from("main_contacts")
-    .insert(body)
+    .insert(insertPayload)
     .select();
   if (insertError) return NextResponse.json({ error: insertError.message }, { status: 500 });
   const insertResult = Array.isArray(insertData) && insertData.length > 0 ? insertData[0] : insertData;
@@ -105,7 +110,7 @@ export async function PUT(req: NextRequest) {
   const { email: lookupEmail, ...fields } = body;
   if (!lookupEmail) return NextResponse.json({ error: "email is required" }, { status: 400 });
 
-  for (const f of ["created_at", "updated_at"]) delete fields[f];
+  for (const f of ["created_at", "updated_at", "created_date"]) delete fields[f];
 
   // Normalize array fields
   if (fields.tags !== undefined) fields.tags = normalizeArray(fields.tags);
