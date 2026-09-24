@@ -43,9 +43,13 @@ Common queries:
   Unsubscribed: SELECT * FROM main_contacts WHERE optin_status = 'Unsubscribed';
   Hard bounced: SELECT * FROM main_contacts WHERE optin_status = 'Hard Bounced';
   By email: SELECT * FROM main_contacts WHERE email ILIKE '%rajmohan%';
+  Added today: SELECT * FROM main_contacts WHERE created_date = CURRENT_DATE ORDER BY email;
   Added this month: SELECT * FROM main_contacts WHERE created_date >= date_trunc('month', CURRENT_DATE);
   Added in last 7 days: SELECT * FROM main_contacts WHERE created_date >= CURRENT_DATE - INTERVAL '7 days';
-  Newest contacts: SELECT * FROM main_contacts ORDER BY created_date DESC NULLS LAST, email;
+  Latest/newest record (single most recent): SELECT * FROM main_contacts ORDER BY created_date DESC NULLS LAST, email LIMIT 1;
+  Latest records (top 5 most recent): SELECT * FROM main_contacts ORDER BY created_date DESC NULLS LAST, email LIMIT 5;
+
+NOTE: When the user asks for "latest", "newest", "most recent", or "last added", ALWAYS use ORDER BY created_date DESC NULLS LAST ... LIMIT N. Do NOT filter by created_date = CURRENT_DATE alone — multiple rows may share the same created_date, and "latest" should mean the most recently added row(s), not "any row from today".
 
 RULES: ALWAYS use SELECT *. Use ILIKE for text matches. For tags/sector/source, use EXISTS + unnest + ILIKE for partial matches (e.g. searching 'structural' should match 'structural audit gujarat'). End with semicolon.
 `.trim();
