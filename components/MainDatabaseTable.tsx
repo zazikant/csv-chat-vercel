@@ -4,6 +4,7 @@ import { useEffect, useState, useTransition } from "react";
 import { MainContactRow } from "@/lib/langgraph/state";
 import { useDebounce } from "@/hooks/useDebounce";
 import SearchableFilter from "@/components/SearchableFilter";
+import RemarksModal from "@/components/RemarksModal";
 
 const ALL_COLUMNS: { key: keyof MainContactRow; label: string }[] = [
   { key: "name",        label: "Name" },
@@ -107,6 +108,9 @@ export default function MainDatabaseTable(props: Props) {
   const [searchTerm, setSearchTerm] = useState("");
   const [filters, setFilters] = useState<Filters>({ ...EMPTY_FILTERS });
   const [showFilters, setShowFilters] = useState(false);
+
+  // Remarks/location expand-to-view modal state.
+  const [modalField, setModalField] = useState<{ title: string; value: string } | null>(null);
 
   // Server-paginated state (only used when externalRows is NOT provided — i.e.
   // the parent lets us fetch our own page. When externalRows IS provided,
@@ -244,7 +248,33 @@ export default function MainDatabaseTable(props: Props) {
     const val = row[key];
     if (val === null || val === undefined) return "—";
     if (key === "tags" || key === "sector" || key === "source" || key === "assigned_to") return renderChips(val);
-    if (key === "remarks" || key === "location") { const s = String(val); return s.length > 40 ? s.slice(0, 40) + "…" : s; }
+    if (key === "remarks" || key === "location") {
+      const s = String(val);
+      if (!s) return "—";
+      // Show a 2-line preview (first ~80 chars or first line) + an
+      // expand button. The full content opens in RemarksModal.
+      const firstLine = s.split("\n")[0] ?? "";
+      const preview = firstLine.length > 80 ? firstLine.slice(0, 80) + "…" : firstLine;
+      const hasMore = s.length > 80 || s.includes("\n");
+      return (
+        <div className="flex max-w-[220px] items-start gap-1">
+          <span className="line-clamp-2 text-gray-500 text-xs" title={firstLine}>{preview}</span>
+          {hasMore && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setModalField({ title: key === "remarks" ? "Remarks" : "Location", value: s });
+              }}
+              className="shrink-0 flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium text-blue-600 transition-colors hover:bg-blue-50 hover:text-blue-700"
+              title="Expand to view full content"
+            >
+              <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" /></svg>
+              Expand
+            </button>
+          )}
+        </div>
+      );
+    }
     if (key === "created_date") { return <span className="font-mono">{formatDate(String(val))}</span>; }
     return String(val);
   }
@@ -260,7 +290,7 @@ export default function MainDatabaseTable(props: Props) {
       if (s === "Unsubscribed") return "text-red-500";
       if (s === "Hard Bounced") return "text-orange-600";
     }
-    if (key === "remarks" || key === "location") return "text-gray-500 text-xs";
+    if (key === "remarks" || key === "location") return "text-gray-500 text-xs align-top";
     if (key === "created_date") return "text-gray-500 text-xs";
     return "text-gray-700";
   }
@@ -334,7 +364,10 @@ export default function MainDatabaseTable(props: Props) {
                   {visibleCols.map((col) => {
                     const isVirtual = col.key === TOTAL_MAILS_SENT_KEY;
                     const val = isVirtual ? undefined : row[col.key as keyof MainContactRow];
-                    return (<td key={String(col.key)} className={`px-4 py-2.5 whitespace-nowrap ${getCellClass(col.key, isVirtual ? undefined : val)}`}>
+                    // remarks/location cells allow wrapping (the preview
+                    // is multi-line); all other cells stay nowrap.
+                    const isLongText = col.key === "remarks" || col.key === "location";
+                    return (<td key={String(col.key)} className={`px-4 py-2.5 ${isLongText ? "" : "whitespace-nowrap"} ${getCellClass(col.key, isVirtual ? undefined : val)}`}>
                       {col.key === "email" && val ? <a href={`mailto:${val}`} onClick={(e) => e.stopPropagation()} className="hover:underline">{formatValue(row, col.key)}</a> : formatValue(row, col.key)}
                     </td>);
                   })}
@@ -355,6 +388,13 @@ export default function MainDatabaseTable(props: Props) {
           <button onClick={() => onPageChange(totalPages)} disabled={page === totalPages} className="w-7 h-7 flex items-center justify-center rounded hover:bg-gray-200 disabled:opacity-30 transition-colors"><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" /></svg></button>
         </div>
       </div>
+
+      <RemarksModal
+        open={modalField !== null}
+        title={modalField?.title ?? ""}
+        value={modalField?.value}
+        onClose={() => setModalField(null)}
+      />
     </div>
   );
 }
