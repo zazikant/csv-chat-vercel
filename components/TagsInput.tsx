@@ -77,7 +77,13 @@ export default function TagsInput({ value, onChange, placeholder, className = ""
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key === "Enter" || e.key === ",") {
+    // Check both e.key and e.keyCode for mobile compatibility — some
+    // mobile keyboards (especially Android autocorrect/autocomplete)
+    // fire keydown with key="Enter" but don't trigger preventDefault
+    // reliably. keyCode 13 is the universal Enter code.
+    const isEnter = e.key === "Enter" || e.keyCode === 13;
+    const isComma = e.key === "," || e.keyCode === 188;
+    if (isEnter || isComma) {
       e.preventDefault();
       if (input.trim()) {
         addTag(input);
@@ -130,9 +136,29 @@ export default function TagsInput({ value, onChange, placeholder, className = ""
           onChange={(e) => { setInput(e.target.value); setShowDropdown(true); }}
           onKeyDown={handleKeyDown}
           onFocus={() => setShowDropdown(true)}
+          // enterKeyHint="done" makes mobile keyboards show a "Done"
+          // button that fires Enter reliably on iOS/Android.
+          enterKeyHint="done"
+          // autoCapitalize="none" prevents iOS from auto-capitalizing
+          // the first letter (tags are normalized to lowercase anyway).
+          autoCapitalize="none"
           placeholder={value.length === 0 ? (placeholder || "Add tags...") : ""}
           className="flex-1 min-w-[80px] text-sm outline-none text-gray-700 placeholder-gray-500 bg-transparent"
         />
+        {/* Mobile-friendly "Add" button — appears when there's text.
+            On mobile, the Enter key on on-screen keyboards doesn't
+            always fire reliably (especially with autocorrect/autocomplete),
+            so this gives users a tap target that always works. */}
+        {input.trim() && (
+          <button
+            type="button"
+            onClick={() => { if (input.trim()) addTag(input); }}
+            className="flex-shrink-0 px-2.5 py-1 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+            aria-label={`Add ${input.trim()}`}
+          >
+            Add
+          </button>
+        )}
         <button
           type="button"
           onClick={() => { setShowDropdown((s) => !s); inputRef.current?.focus(); }}
@@ -147,7 +173,7 @@ export default function TagsInput({ value, onChange, placeholder, className = ""
       {/* Inline hint */}
       {input.trim() && !suggestions.some((s) => s.tag === input.trim().toLowerCase()) && (
         <p className="mt-1 text-[11px] text-gray-400">
-          Press <kbd className="px-1 py-0.5 bg-gray-100 rounded text-gray-600">Enter</kbd> to add <strong>&quot;{input.trim()}&quot;</strong>
+          Press <kbd className="px-1 py-0.5 bg-gray-100 rounded text-gray-600">Enter</kbd> or tap <strong>Add</strong> to add &quot;{input.trim()}&quot;
         </p>
       )}
       {show && (
