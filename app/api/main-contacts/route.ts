@@ -134,6 +134,11 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
+  // merge_arrays=true → UNION array fields (tags, source, sector, assigned_to)
+  // with existing DB values instead of replacing them. Used by the GEM
+  // chatbot so it can add "chatbot"/"gem-chatbot" tags without wiping
+  // pre-existing tags.
+  const mergeArrays = req.nextUrl.searchParams.get("merge_arrays") === "true";
   if (!body?.email) return NextResponse.json({ error: "email is required" }, { status: 400 });
   body.email = String(body.email).trim().toLowerCase();
   if (body.tags !== undefined) body.tags = normalizeArray(body.tags);
@@ -170,10 +175,25 @@ export async function POST(req: NextRequest) {
       if (k === "email") { merged.email = v; continue; }
 
       if (k === "tags" || k === "sector" || k === "source" || k === "assigned_to") {
-        // Always use the new value — if user cleared all tags, the array is []
-        // and we should write [] to the DB (clearing the field).
-        // The old merge logic (skip if empty) prevented intentional clearing.
-        merged[k] = Array.isArray(v) ? v : [];
+        if (mergeArrays) {
+          // UNION: merge new values into existing array (dedup, preserve order)
+          const existingArr = Array.isArray(existingRow[k]) ? (existingRow[k] as string[]) : [];
+          const newArr = Array.isArray(v) ? v : [];
+          const seen = new Set(existingArr.map((s) => String(s).toLowerCase()));
+          const union = [...existingArr];
+          for (const item of newArr) {
+            if (!seen.has(String(item).toLowerCase())) {
+              union.push(item);
+              seen.add(String(item).toLowerCase());
+            }
+          }
+          merged[k] = union;
+        } else {
+          // Always use the new value — if user cleared all tags, the array is []
+          // and we should write [] to the DB (clearing the field).
+          // The old merge logic (skip if empty) prevented intentional clearing.
+          merged[k] = Array.isArray(v) ? v : [];
+        }
         continue;
       }
 
@@ -215,6 +235,11 @@ export async function POST(req: NextRequest) {
 
 export async function PUT(req: NextRequest) {
   const body = await req.json();
+  // merge_arrays=true → UNION array fields (tags, source, sector, assigned_to)
+  // with existing DB values instead of replacing them. Used by the GEM
+  // chatbot so it can add "chatbot"/"gem-chatbot" tags without wiping
+  // pre-existing tags.
+  const mergeArrays = req.nextUrl.searchParams.get("merge_arrays") === "true";
   const { email: lookupEmail, ...fields } = body;
   if (!lookupEmail) return NextResponse.json({ error: "email is required" }, { status: 400 });
 
@@ -257,12 +282,25 @@ export async function PUT(req: NextRequest) {
       continue;
     }
 
-    // For array fields (tags, sector, source):
-    // If the new value is empty [] but the DB has values, keep the DB values.
-    // If the new value is non-empty, use it (user changed it).
+    // For array fields (tags, sector, source, assigned_to):
     if (k === "tags" || k === "sector" || k === "source" || k === "assigned_to") {
-      // Always use the new value — if user cleared all tags, write [] to DB.
-      mergedFields[k] = Array.isArray(v) ? v : [];
+      if (mergeArrays) {
+        // UNION: merge new values into existing array (dedup, preserve order)
+        const existingArr = Array.isArray(existingRow[k]) ? (existingRow[k] as string[]) : [];
+        const newArr = Array.isArray(v) ? v : [];
+        const seen = new Set(existingArr.map((s) => String(s).toLowerCase()));
+        const union = [...existingArr];
+        for (const item of newArr) {
+          if (!seen.has(String(item).toLowerCase())) {
+            union.push(item);
+            seen.add(String(item).toLowerCase());
+          }
+        }
+        mergedFields[k] = union;
+      } else {
+        // Always use the new value — if user cleared all tags, write [] to DB.
+        mergedFields[k] = Array.isArray(v) ? v : [];
+      }
       continue;
     }
 
