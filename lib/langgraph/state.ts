@@ -76,7 +76,7 @@ export interface MailerRow {
 // ---- LLM provider (NVIDIA only — see lib/nvidia.ts) -------------------
 //
 // The app uses NVIDIA's integrate API exclusively (model defaults to
-// nvidia/nemotron-3-super-120b-a12b). The API key is read server-side
+// nvidia/nemotron-3-ultra-550b-a55b, override via NVIDIA_MODEL env var). The API key is read server-side
 // from NVIDIA_API_KEY — never exposed to the browser.
 //
 // Ported from github.com/zazikant/tradingview-notes-app-nvidia.

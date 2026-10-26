@@ -14,7 +14,7 @@ export const maxDuration = 60;  // Vercel Hobby Node cap — NVIDIA calls run wi
  * only used by the LangGraph state machine internally; no rows are written
  * to a conversation_history table. (Keeps Supabase disk usage minimal.)
  *
- * The LLM is always NVIDIA (nvidia/nemotron-3-super-120b-a12b by default).
+ * The LLM is always NVIDIA (nvidia/nemotron-3-ultra-550b-a55b by default, overridable via NVIDIA_MODEL env var).
  * The API key is read from NVIDIA_API_KEY on the server — never accepted
  * from the request body (avoids leaking the key through the browser).
  */

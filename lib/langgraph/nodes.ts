@@ -7,7 +7,7 @@ import { QueryGraphStateType } from "./state";
  *
  * The NVIDIA client uses raw fetch + SSE parsing (no @langchain/openai SDK
  * needed) and reads NVIDIA_API_KEY from the server environment. The model
- * defaults to nvidia/nemotron-3-super-120b-a12b.
+ * defaults to nvidia/nemotron-3-ultra-550b-a55b.
  *
  * Ported from github.com/zazikant/tradingview-notes-app-nvidia.
  */
@@ -64,6 +64,26 @@ Return ONLY the single classification word, nothing else.`;
   return { queryIntent: intent };
 }
 
+/**
+ * Extract a clean SQL statement from a raw LLM response.
+ *
+ * Nemotron sometimes prefixes the SQL with prose ("Here is the query:...")
+ * or wraps it in markdown fences. executeSQL() rejects anything that doesn't
+ * start with SELECT, and a rejection costs a full error-recovery LLM round
+ * trip (~10-30s). Stripping here keeps the first execution attempt clean.
+ */
+function extractSQL(text: string): string {
+  let t = text.trim().replace(/```sql|```/gi, "").trim();
+  const lower = t.toLowerCase();
+  // Drop any prose/comments before the statement itself.
+  const selectIdx = lower.indexOf("select");
+  if (selectIdx > 0) t = t.slice(selectIdx);
+  // Keep everything up to the final semicolon (drops trailing commentary).
+  const semi = t.lastIndexOf(";");
+  if (semi !== -1) t = t.slice(0, semi + 1);
+  return t.trim();
+}
+
 export async function sqlGeneratorNode(
   state: QueryGraphStateType
 ): Promise<Partial<QueryGraphStateType>> {
@@ -85,20 +105,17 @@ Rules:
 2. Add WHERE clauses for filters, ORDER BY for sorting
 3. End with semicolon
 4. Use ILIKE for case-insensitive text comparisons
-5. Valid tables: contacts, mailers, email_journey
+5. Valid tables: ONLY the tables named in the Schema section above (main_contacts, contacts, mailers). Never invent tables.
+6. Output ONLY the raw SQL statement — no prose, no markdown, no backticks.
 
 Examples:
-- Show hot contacts → SELECT * FROM contacts WHERE engagement_score ILIKE 'hot' ORDER BY email;
-- Show subscribed → SELECT * FROM contacts WHERE optin_status ILIKE 'subscribed' ORDER BY email;
+- Show hot contacts (Contacts tab) → SELECT * FROM contacts WHERE engagement_score ILIKE 'hot' ORDER BY email;
+- Show subscribed (Main tab) → SELECT * FROM main_contacts WHERE optin_status ILIKE 'subscribed' ORDER BY email;
 - Show all → SELECT * FROM contacts ORDER BY email;
-- Sort by opens → SELECT * FROM contacts ORDER BY total_opens DESC;
-- Best mailers → SELECT * FROM mailers ORDER BY open_rate DESC;
-- Recent opens → SELECT * FROM email_journey WHERE event_type = 'OPENED' ORDER BY timestamp DESC;`;
+- Sort by opens (Contacts tab) → SELECT * FROM contacts ORDER BY opens DESC;
+- Best mailers → SELECT * FROM mailers ORDER BY open_rate DESC;`;
 
-  const sql = (await nvidiaChat(prompt, { temperature: 0, maxRetries: 2 }))
-    .trim()
-    .replace(/```sql|```/gi, "")
-    .trim();
+  const sql = extractSQL(await nvidiaChat(prompt, { temperature: 0, maxRetries: 2 }));
 
   console.log(`💻 [SQLGenerator] SQL: ${sql}`);
   return { generatedSQL: sql, queryError: null, retryCount: state.retryCount ?? 0 };
@@ -137,10 +154,7 @@ Original user query: "${state.userQuery}"
 
 Return ONLY the corrected SQL SELECT statement, nothing else. No markdown, no backticks.`;
 
-  const fixedSQL = (await nvidiaChat(prompt, { temperature: 0, maxRetries: 2 }))
-    .trim()
-    .replace(/```sql|```/gi, "")
-    .trim();
+  const fixedSQL = extractSQL(await nvidiaChat(prompt, { temperature: 0, maxRetries: 2 }));
 
   console.log(`🔧 [ErrorRecovery] Fixed: ${fixedSQL}`);
   return { generatedSQL: fixedSQL, queryError: null };
@@ -151,7 +165,7 @@ export async function responseFormatterNode(
 ): Promise<Partial<QueryGraphStateType>> {
   if (state.queryIntent === "unknown") {
     const msg =
-      "I can only answer questions about the email campaign tracker data — contacts, mailers, and email journey events (opens, clicks, bounces). Please rephrase your question.";
+      "I can only answer questions about the email campaign tracker data — contacts, mailers, opens, clicks, and bounces. If you're asking about mailers or engagement, try the Contacts tab; for name/company/tags, try the Main Database tab.";
     return {
       finalResponse: msg,
       shouldUpdateTable: false,

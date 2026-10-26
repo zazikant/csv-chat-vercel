@@ -12,10 +12,23 @@
  *
  * Required env vars (server-only — never expose to the browser):
  *   NVIDIA_API_KEY  — your NVIDIA build API key (https://build.nvidia.com → API key)
+ *   NVIDIA_MODEL    — optional model override (defaults to nemotron-3-ultra-550b-a55b)
  *
  * Gateway: https://integrate.api.nvidia.com/v1/chat/completions
- * Model:   nvidia/nemotron-3-super-120b-a12b (default) — 120B params, fast (~4s),
- *          produces clean content with minimal reasoning. Uses reasoning_effort:'low'.
+ * Model:   nvidia/nemotron-3-ultra-550b-a55b (default) — 550B params (55B active
+ *          via MoE), ~3s on SQL-generation prompts. Uses reasoning_effort:'low'.
+ *
+ * ⚠️ Model deprecation (2026-10-26): the previous default
+ *    nvidia/nemotron-3-super-120b-a12b started returning
+ *      404 {"detail":"Function '<uuid>': Not found for account ..."}
+ *    even though it still appears in GET /v1/models — NVIDIA decommissioned
+ *    its serving function. If this happens again, switch the model below (or
+ *    set NVIDIA_MODEL env var in Vercel) to a live model. Verify candidates
+ *    with a 1-token chat completion — the /v1/models list can include dead IDs.
+ *    Known-good as of 2026-10-26: nvidia/nemotron-3-ultra-550b-a55b (default),
+ *    nvidia/nemotron-3.5-lightning-30b-a3b, nvidia/nemotron-3.5-super-vl-120b-a12b.
+ *    Known-dead: nvidia/nemotron-3-super-120b-a12b, nvidia/nemotron-nano-3-30b-a3b,
+ *    nvidia/llama-3.1-nemotron-ultra-253b-v1, meta/llama-3.1-8b-instruct (410 Gone).
  *
  * Retry / rate-handling:
  *   - Retryable HTTP statuses: 429, 500, 502, 503, 504
@@ -24,7 +37,11 @@
  */
 
 const NVIDIA_GATEWAY = "https://integrate.api.nvidia.com/v1/chat/completions";
-const NVIDIA_DEFAULT_MODEL = "nvidia/nemotron-3-super-120b-a12b";
+// Overridable via NVIDIA_MODEL env var (Vercel → Settings → Environment
+// Variables) so a future NVIDIA model deprecation can be fixed without a code
+// change — just update the env var and redeploy.
+const NVIDIA_FALLBACK_MODEL = "nvidia/nemotron-3-ultra-550b-a55b";
+const NVIDIA_DEFAULT_MODEL = process.env.NVIDIA_MODEL || NVIDIA_FALLBACK_MODEL;
 const NVIDIA_DEFAULT_TEMPERATURE = 0.3;
 const NVIDIA_DEFAULT_TOP_P = 1.0;
 // Raised from 4096 to 16384. Nemotron sometimes burns the entire 4096 budget on
@@ -298,4 +315,4 @@ export async function nvidiaChat(
   return result.content;
 }
 
-export { isRetryableError, NVIDIA_DEFAULT_MODEL };
+export { isRetryableError, NVIDIA_FALLBACK_MODEL as NVIDIA_DEFAULT_MODEL };

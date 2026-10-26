@@ -16,7 +16,7 @@ interface Props {
   activeTab: string;
 }
 
-const NVIDIA_MODEL = "nvidia/nemotron-3-super-120b-a12b";
+const NVIDIA_MODEL = "nvidia/nemotron-3-ultra-550b-a55b";
 
 const TAB_LABELS: Record<string, string> = {
   main: "Main Database (identity data)",
