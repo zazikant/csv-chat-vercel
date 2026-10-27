@@ -143,7 +143,7 @@ export default function TagsInput({ value, onChange, placeholder, className = ""
           // the first letter (tags are normalized to lowercase anyway).
           autoCapitalize="none"
           placeholder={value.length === 0 ? (placeholder || "Add tags...") : ""}
-          className="flex-1 min-w-[80px] text-sm outline-none text-gray-700 placeholder-gray-500 bg-transparent"
+          className="flex-1 min-w-[80px] text-sm outline-none text-black placeholder-gray-500 bg-transparent"
         />
         {/* Mobile-friendly "Add" button — appears when there's text.
             On mobile, the Enter key on on-screen keyboards doesn't

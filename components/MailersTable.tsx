@@ -368,7 +368,7 @@ export default function MailersTable(props: Props) {
               value={searchTerm}
               onChange={(e) => { setSearchTerm(e.target.value); onPageChange(1); }}
               placeholder="Search subject / ID..."
-              className="w-full pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-100 focus:border-blue-300 placeholder-gray-400"
+              className="w-full pl-8 pr-3 py-1.5 text-xs text-black border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-100 focus:border-blue-300 placeholder-gray-400"
             />
             {loading && isServerPaged && (
               <svg className="w-3.5 h-3.5 absolute right-2.5 top-1/2 -translate-y-1/2 text-blue-500 animate-spin" fill="none" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeOpacity="0.25" /><path fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" /></svg>
@@ -420,7 +420,7 @@ export default function MailersTable(props: Props) {
               value={filters.min_open_rate}
               onChange={(e) => { setFilters((f) => ({ ...f, min_open_rate: e.target.value })); onPageChange(1); }}
               placeholder="e.g. 50"
-              className="w-24 px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-100 focus:border-blue-300"
+              className="w-24 px-2 py-1.5 text-xs text-black border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-100 focus:border-blue-300"
             />
           </div>
           <div className="flex flex-col gap-1">
@@ -430,7 +430,7 @@ export default function MailersTable(props: Props) {
               value={filters.min_click_rate}
               onChange={(e) => { setFilters((f) => ({ ...f, min_click_rate: e.target.value })); onPageChange(1); }}
               placeholder="e.g. 10"
-              className="w-24 px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-100 focus:border-blue-300"
+              className="w-24 px-2 py-1.5 text-xs text-black border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-100 focus:border-blue-300"
             />
           </div>
           <div className="flex flex-col gap-1">
@@ -440,7 +440,7 @@ export default function MailersTable(props: Props) {
               value={filters.min_unsubscribe_rate}
               onChange={(e) => { setFilters((f) => ({ ...f, min_unsubscribe_rate: e.target.value })); onPageChange(1); }}
               placeholder="e.g. 1"
-              className="w-24 px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-100 focus:border-blue-300"
+              className="w-24 px-2 py-1.5 text-xs text-black border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-100 focus:border-blue-300"
             />
           </div>
           <div className="flex flex-col gap-1">
@@ -450,7 +450,7 @@ export default function MailersTable(props: Props) {
               value={filters.min_hardbounce_rate}
               onChange={(e) => { setFilters((f) => ({ ...f, min_hardbounce_rate: e.target.value })); onPageChange(1); }}
               placeholder="e.g. 1"
-              className="w-24 px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-100 focus:border-blue-300"
+              className="w-24 px-2 py-1.5 text-xs text-black border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-100 focus:border-blue-300"
             />
           </div>
           <div className="flex flex-col gap-1">
@@ -459,7 +459,7 @@ export default function MailersTable(props: Props) {
               type="date"
               value={filters.sent_after}
               onChange={(e) => { setFilters((f) => ({ ...f, sent_after: e.target.value })); onPageChange(1); }}
-              className="px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-100 focus:border-blue-300"
+              className="px-2 py-1.5 text-xs text-black border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-100 focus:border-blue-300"
             />
           </div>
           <div className="flex flex-col gap-1">
@@ -468,7 +468,7 @@ export default function MailersTable(props: Props) {
               type="date"
               value={filters.sent_before}
               onChange={(e) => { setFilters((f) => ({ ...f, sent_before: e.target.value })); onPageChange(1); }}
-              className="px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-100 focus:border-blue-300"
+              className="px-2 py-1.5 text-xs text-black border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-100 focus:border-blue-300"
             />
           </div>
           <div className="flex flex-col gap-1">
@@ -476,7 +476,7 @@ export default function MailersTable(props: Props) {
             <select
               value={filters.has_unsubscribed}
               onChange={(e) => { setFilters((f) => ({ ...f, has_unsubscribed: e.target.value })); onPageChange(1); }}
-              className="px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-100 focus:border-blue-300 bg-white"
+              className="px-2 py-1.5 text-xs text-black border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-100 focus:border-blue-300 bg-white"
             >
               <option value="">Any</option>
               <option value="yes">Yes (≥1)</option>
@@ -488,7 +488,7 @@ export default function MailersTable(props: Props) {
             <select
               value={filters.has_hardbounced}
               onChange={(e) => { setFilters((f) => ({ ...f, has_hardbounced: e.target.value })); onPageChange(1); }}
-              className="px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-100 focus:border-blue-300 bg-white"
+              className="px-2 py-1.5 text-xs text-black border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-100 focus:border-blue-300 bg-white"
             >
               <option value="">Any</option>
               <option value="yes">Yes (≥1)</option>

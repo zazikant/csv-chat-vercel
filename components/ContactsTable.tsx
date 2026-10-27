@@ -237,7 +237,7 @@ export default function ContactsTable(props: Props) {
             Filters {activeFilterCount > 0 && <span className="bg-blue-600 text-white text-[10px] px-1.5 rounded-full">{activeFilterCount}</span>}
           </button>
           <div className="relative flex-1 min-w-[120px]">
-            <input type="text" value={searchTerm} onChange={(e) => { setSearchTerm(e.target.value); onPageChange(1); }} placeholder="Search email / mailer / status..." className="w-full pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-100 focus:border-blue-300 placeholder-gray-400" />
+            <input type="text" value={searchTerm} onChange={(e) => { setSearchTerm(e.target.value); onPageChange(1); }} placeholder="Search email / mailer / status..." className="w-full pl-8 pr-3 py-1.5 text-xs text-black border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-100 focus:border-blue-300 placeholder-gray-400" />
             {loading && isServerPaged && (
               <svg className="w-3.5 h-3.5 absolute right-2.5 top-1/2 -translate-y-1/2 text-blue-500 animate-spin" fill="none" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeOpacity="0.25" /><path fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" /></svg>
             )}
@@ -301,7 +301,7 @@ function FilterSelect({ label, value, onChange, options }: { label: string; valu
   return (
     <div className="flex flex-col gap-1">
       <label className="text-[10px] font-medium text-gray-500 uppercase tracking-wider">{label}</label>
-      <select value={value} onChange={(e) => onChange(e.target.value)} className="px-2 py-1.5 text-xs text-gray-900 border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-100 focus:border-blue-300 bg-white min-w-[120px]">
+      <select value={value} onChange={(e) => onChange(e.target.value)} className="px-2 py-1.5 text-xs text-black border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-100 focus:border-blue-300 bg-white min-w-[120px]">
         {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
     </div>

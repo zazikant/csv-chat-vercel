@@ -94,28 +94,28 @@ export default function EditModal({ record, mode, onClose, onSave }: Props) {
           {section("Contact", <>
             <div>
               <label className="block text-xs font-medium text-gray-500 mb-1.5">Email *</label>
-              <input type="email" value={(form.email as string) || ""} disabled={mode === "edit"} onChange={(e) => setVal("email", e.target.value)} className="w-full px-3 py-2 text-sm text-gray-900 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300 placeholder-gray-500 disabled:bg-gray-50 disabled:text-gray-400" placeholder="e.g. rajesh@company.com" />
+              <input type="email" value={(form.email as string) || ""} disabled={mode === "edit"} onChange={(e) => setVal("email", e.target.value)} className="w-full px-3 py-2 text-sm text-black border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300 placeholder-gray-500 disabled:bg-gray-50 disabled:text-gray-400" placeholder="e.g. rajesh@company.com" />
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-500 mb-1.5">Mailer ID</label>
-              <input type="text" list="mailer-options" value={(form.mailer_id as string) || ""} onChange={(e) => setVal("mailer_id", e.target.value)} placeholder="e.g. M001" className="w-full px-3 py-2 text-sm text-gray-900 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300 placeholder-gray-500 font-mono" />
+              <input type="text" list="mailer-options" value={(form.mailer_id as string) || ""} onChange={(e) => setVal("mailer_id", e.target.value)} placeholder="e.g. M001" className="w-full px-3 py-2 text-sm text-black border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300 placeholder-gray-500 font-mono" />
               <datalist id="mailer-options">{mailerOptions.map((m) => <option key={m.mailer_id} value={m.mailer_id}>{m.subject_line}</option>)}</datalist>
             </div>
           </>)}
           {section("Engagement", <>
             <div>
               <label className="block text-xs font-medium text-gray-500 mb-1.5">Opens</label>
-              <input type="number" min={0} value={(form.opens as number) ?? 0} onChange={(e) => setVal("opens", Number(e.target.value) || 0 as never)} className="w-full px-3 py-2 text-sm text-gray-900 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300" />
+              <input type="number" min={0} value={(form.opens as number) ?? 0} onChange={(e) => setVal("opens", Number(e.target.value) || 0 as never)} className="w-full px-3 py-2 text-sm text-black border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300" />
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-500 mb-1.5">Clicks</label>
-              <input type="number" min={0} value={(form.clicks as number) ?? 0} onChange={(e) => setVal("clicks", Number(e.target.value) || 0 as never)} className="w-full px-3 py-2 text-sm text-gray-900 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300" />
+              <input type="number" min={0} value={(form.clicks as number) ?? 0} onChange={(e) => setVal("clicks", Number(e.target.value) || 0 as never)} className="w-full px-3 py-2 text-sm text-black border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300" />
             </div>
           </>)}
           {section("Status", <>
             <div>
               <label className="block text-xs font-medium text-gray-500 mb-1.5">Opt-in Status</label>
-              <select value={(form.optin_status as string) || "Subscribed"} onChange={(e) => setVal("optin_status", e.target.value as never)} className="w-full px-3 py-2 text-sm text-gray-900 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300 bg-white">
+              <select value={(form.optin_status as string) || "Subscribed"} onChange={(e) => setVal("optin_status", e.target.value as never)} className="w-full px-3 py-2 text-sm text-black border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300 bg-white">
                 {OPTIN_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
               </select>
             </div>

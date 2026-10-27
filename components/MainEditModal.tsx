@@ -119,7 +119,7 @@ export default function MainEditModal({ record, mode, onClose, onSave }: Props) 
           {section("Identity", <>
             <div>
               <label className="block text-xs font-medium text-gray-500 mb-1.5">Email *</label>
-              <input type="email" value={(form.email as string) || ""} onChange={(e) => setVal("email", e.target.value as never)} className="w-full px-3 py-2 text-sm text-gray-900 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300 placeholder-gray-500" placeholder="e.g. rajesh@company.com" />
+              <input type="email" value={(form.email as string) || ""} onChange={(e) => setVal("email", e.target.value as never)} className="w-full px-3 py-2 text-sm text-black border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300 placeholder-gray-500" placeholder="e.g. rajesh@company.com" />
             </div>
             {field("name", "Name", "e.g. Rajesh Kumar")}
           </>)}
@@ -132,7 +132,7 @@ export default function MainEditModal({ record, mode, onClose, onSave }: Props) 
             {field("phone", "Phone", "e.g. +91 9876543210")}
             <div>
               <label className="block text-xs font-medium text-gray-500 mb-1.5">Opt-in Status</label>
-              <select value={(form.optin_status as string) || "Subscribed"} onChange={(e) => setVal("optin_status", e.target.value as never)} className="w-full px-3 py-2 text-sm text-gray-900 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300 bg-white">
+              <select value={(form.optin_status as string) || "Subscribed"} onChange={(e) => setVal("optin_status", e.target.value as never)} className="w-full px-3 py-2 text-sm text-black border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300 bg-white">
                 {OPTIN_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
               </select>
             </div>
@@ -158,11 +158,11 @@ export default function MainEditModal({ record, mode, onClose, onSave }: Props) 
           {section("Remarks & Location", <>
             <div className="col-span-1 sm:col-span-2">
               <label className="block text-xs font-medium text-gray-500 mb-1.5">Remarks</label>
-              <textarea value={(form.remarks as string) || ""} onChange={(e) => setVal("remarks", e.target.value as never)} rows={3} placeholder="Free-text notes..." className="w-full px-3 py-2 text-sm text-gray-900 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300 resize-none placeholder-gray-500" />
+              <textarea value={(form.remarks as string) || ""} onChange={(e) => setVal("remarks", e.target.value as never)} rows={3} placeholder="Free-text notes..." className="w-full px-3 py-2 text-sm text-black border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300 resize-none placeholder-gray-500" />
             </div>
             <div className="col-span-1 sm:col-span-2">
               <label className="block text-xs font-medium text-gray-500 mb-1.5">Location</label>
-              <input type="text" value={(form.location as string) || ""} onChange={(e) => setVal("location", e.target.value as never)} className="w-full px-3 py-2 text-sm text-gray-900 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300 placeholder-gray-500" placeholder="e.g. Mumbai, Maharashtra, India" />
+              <input type="text" value={(form.location as string) || ""} onChange={(e) => setVal("location", e.target.value as never)} className="w-full px-3 py-2 text-sm text-black border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300 placeholder-gray-500" placeholder="e.g. Mumbai, Maharashtra, India" />
             </div>
           </>)}
         </div>

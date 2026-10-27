@@ -273,7 +273,7 @@ export default function BulkDeleteModal({
                 onChange={(e) => setTextInput(e.target.value)}
                 rows={6}
                 placeholder={`Paste ${pkLabel.toLowerCase()}s here, one per line or comma-separated:\n\nuser1@example.com\nuser2@example.com\nuser3@example.com`}
-                className="w-full px-3 py-2 text-sm font-mono text-gray-900 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-100 focus:border-red-300 placeholder-gray-400 resize-y"
+                className="w-full px-3 py-2 text-sm font-mono text-black border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-100 focus:border-red-300 placeholder-gray-400 resize-y"
                 spellCheck={false}
               />
               <button

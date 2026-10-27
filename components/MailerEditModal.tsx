@@ -144,7 +144,7 @@ export default function MailerEditModal({ record, mode, onClose, onSave }: Props
           : (form[key] as string) || ""}
         disabled={disabled}
         onChange={(e) => setVal(key, type === "datetime-local" ? localInputToISO(e.target.value) : e.target.value)}
-        className="w-full px-3 py-2 text-sm text-gray-900 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300 placeholder-gray-500 disabled:bg-gray-50 disabled:text-gray-400"
+        className="w-full px-3 py-2 text-sm text-black border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300 placeholder-gray-500 disabled:bg-gray-50 disabled:text-gray-400"
         placeholder={placeholder}
       />
     </div>

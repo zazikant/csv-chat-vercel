@@ -100,7 +100,7 @@ export default function SqlQueryBox({ onRun }: Props) {
               onKeyDown={handleKeyDown}
               rows={3}
               placeholder="SELECT * FROM contacts WHERE engagement_score = 'HOT' ORDER BY email;"
-              className="flex-1 px-3 py-2 text-xs font-mono text-gray-900 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-100 focus:border-purple-300 placeholder-gray-400 bg-white resize-y"
+              className="flex-1 px-3 py-2 text-xs font-mono text-black border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-100 focus:border-purple-300 placeholder-gray-400 bg-white resize-y"
               spellCheck={false}
             />
             <div className="flex flex-col gap-1">

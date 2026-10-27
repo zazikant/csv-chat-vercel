@@ -191,7 +191,7 @@ export default function ChatPanel({ sessionId, currentRows, onTableUpdate, activ
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Ask about your contacts or mailers..."
-            className="flex-1 text-sm outline-none text-gray-700 placeholder-gray-500 bg-transparent"
+            className="flex-1 text-sm outline-none text-black placeholder-gray-500 bg-transparent"
             disabled={loading}
           />
           <button

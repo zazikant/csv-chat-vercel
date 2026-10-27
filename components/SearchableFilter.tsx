@@ -34,7 +34,7 @@ export default function SearchableFilter({ label, value, onChange, options }: { 
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder={`Search ${label.toLowerCase()}...`}
-                className="w-full px-2 py-1 text-xs border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-100"
+                className="w-full px-2 py-1 text-xs text-black border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-100"
                 autoFocus
               />
             </div>
