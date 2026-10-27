@@ -101,16 +101,21 @@ function HomePageInner() {
   async function handleBulkDeleteMain(emails: string[]): Promise<{ deleted: number; notFound: string[] }> {
     const unique = Array.from(new Set(emails.map((e) => e.toLowerCase())));
     // We don't know the existing emails in server-paged mode without a fetch.
-    // Just delete optimistically — the API will report the actual count.
-    const notFound: string[] = [];
+    // Just delete optimistically — the API reports the actual deleted count
+    // and which emails were not found.
     if (unique.length > 0) {
-      await fetch("/api/main-contacts", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ emails: unique }) });
+      const res = await fetch("/api/main-contacts", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ emails: unique }) });
+      const json = await res.json().catch(() => null);
+      setMainRowsOverride(null);
+      setMainTotalOverride(null);
+      reloadMailCounts();
+      bumpDataVersion();
+      if (res.ok && json) {
+        return { deleted: Number(json.deleted ?? unique.length), notFound: Array.isArray(json.notFound) ? json.notFound : [] };
+      }
+      throw new Error(json?.error || `Delete failed (HTTP ${res.status})`);
     }
-    setMainRowsOverride(null);
-    setMainTotalOverride(null);
-    reloadMailCounts();
-    bumpDataVersion();
-    return { deleted: unique.length, notFound };
+    return { deleted: 0, notFound: [] };
   }
 
   // Contacts handlers
@@ -124,11 +129,18 @@ function HomePageInner() {
     if (unique.length > 0) {
       // Server-paged mode: the browser no longer holds the full table, so
       // email → id mapping + deletion happen server-side (DELETE by emails).
-      await fetch("/api/contacts", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ emails: unique }) });
+      // The API reports the actual number of engagement rows deleted plus
+      // which emails didn't exist.
+      const res = await fetch("/api/contacts", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ emails: unique }) });
+      const json = await res.json().catch(() => null);
       reloadMailCounts();
       bumpDataVersion();
+      if (res.ok && json) {
+        return { deleted: Number(json.deleted ?? unique.length), notFound: Array.isArray(json.notFound) ? json.notFound : [] };
+      }
+      throw new Error(json?.error || `Delete failed (HTTP ${res.status})`);
     }
-    return { deleted: unique.length, notFound: [] };
+    return { deleted: 0, notFound: [] };
   }
 
   // Mailers handlers
@@ -139,10 +151,15 @@ function HomePageInner() {
   async function handleBulkDeleteMailers(mailerIds: string[]): Promise<{ deleted: number; notFound: string[] }> {
     const unique = Array.from(new Set(mailerIds));
     if (unique.length > 0) {
-      await fetch("/api/mailers", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mailer_ids: unique }) });
+      const res = await fetch("/api/mailers", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mailer_ids: unique }) });
+      const json = await res.json().catch(() => null);
       bumpDataVersion();
+      if (res.ok && json) {
+        return { deleted: Number(json.deleted ?? unique.length), notFound: Array.isArray(json.notFound) ? json.notFound : [] };
+      }
+      throw new Error(json?.error || `Delete failed (HTTP ${res.status})`);
     }
-    return { deleted: unique.length, notFound: [] };
+    return { deleted: 0, notFound: [] };
   }
 
   function handleSqlResult(rows: Record<string, unknown>[]) {

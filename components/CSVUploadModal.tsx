@@ -122,13 +122,33 @@ export default function CSVUploadModal({ onClose, onUpload, tab }: Props) {
 
   async function handleUpload() {
     const valid = parsedRows.filter((r) => r.errors.length === 0); if (valid.length === 0) { setUploadError("No valid rows."); return; }
+    if (valid.length > 500) { setUploadError(`This file has ${valid.length} valid rows — the server accepts at most 500 rows per upload. Split the CSV into smaller files.`); return; }
     setUploading(true); setUploadError("");
     try {
       const endpoint = isMain ? "/api/main-contacts/bulk" : "/api/contacts/bulk";
       const res = await fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ rows: valid.map((r) => r.data) }) });
       const d = await res.json(); if (!res.ok) throw new Error(d.error || "Upload failed");
-      const ins = d.inserted ?? d.upserted ?? 0, tot = d.total ?? 0;
-      alert(`Upload complete: ${ins} row${ins !== 1 ? "s" : ""} processed out of ${tot}.`);
+      // Accurate per-action breakdown — “processed” = inserted + updated;
+      // skipped rows are intentional (duplicates) and reported separately.
+      const inserted = d.inserted ?? 0;
+      const updated = d.updated ?? 0;
+      const processed = inserted + updated;
+      const total = d.total ?? valid.length;
+      const skippedExact = d.skipped ?? 0;
+      const intraDup = d.intraCsvDuplicates ?? 0;
+      let msg: string;
+      if (typeof updated === "number" && (updated > 0 || skippedExact > 0 || intraDup > 0)) {
+        msg = `Upload complete: ${processed} of ${total} rows processed (${inserted} inserted, ${updated} updated)`;
+        const notes: string[] = [];
+        if (skippedExact > 0) notes.push(`${skippedExact} skipped as exact duplicate${skippedExact !== 1 ? "s" : ""}`);
+        if (intraDup > 0) notes.push(`${intraDup} duplicate${intraDup !== 1 ? "s" : ""} within the CSV (later row won)`);
+        if (notes.length > 0) msg += ` — ${notes.join(", ")}`;
+        msg += ".";
+      } else {
+        const ins = d.inserted ?? d.upserted ?? 0, tot = d.total ?? 0;
+        msg = `Upload complete: ${ins} row${ins !== 1 ? "s" : ""} processed out of ${tot}.`;
+      }
+      alert(msg);
       onUpload(); onClose();
     } catch (err) { setUploadError(err instanceof Error ? err.message : "Upload failed"); }
     finally { setUploading(false); }

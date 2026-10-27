@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
+import { syncMainOptinStatusForEmails } from "@/lib/syncOptinStatus";
 
 export const runtime = "nodejs";
 
@@ -146,6 +147,11 @@ export async function POST(req: NextRequest) {
     }
   }
   if (upsertErr) return NextResponse.json({ error: upsertErr }, { status: 500 });
+
+  // Step 8: Propagate optin_status from the engagement rows to
+  // main_contacts (worst status wins) so the Main Contacts view reflects
+  // CSV-imported statuses (e.g. Hard Bounced) immediately.
+  await syncMainOptinStatusForEmails(cleanedRows.map((r) => r.email));
 
   return NextResponse.json({
     inserted: insertByKey.size,

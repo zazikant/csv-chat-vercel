@@ -133,6 +133,8 @@ Without `page`: legacy shape — all contacts as a bare array, ordered by `id DE
 
 With `page`: server-side paginated search (§13.8) — `?page&pageSize&q&optin&engagement&mailer` (`mailer=(none)` = unassigned rows). Returns `{rows, total, page, pageSize}` via the `search_contacts` RPC, with a fetchAll+filter fallback.
 
+With `export=1`: CSV-export mode — returns **ALL** rows matching the same filters (`?export=1&q&optin&engagement&mailer`) as `{rows, total, exported: true}`. The RPC is looped 1000 rows per call until the full filtered set is collected, so a CSV download always contains exactly as many rows as the header total (e.g. Hard Bounced → 49 rows exported, not just the visible 25-row page). Same mode exists on `GET /api/main-contacts` and `GET /api/mailers`.
+
 ### `POST /api/contacts`
 Add a new contact or update an existing one.
 
@@ -243,6 +245,25 @@ The `syncIdentityFields()` helper:
 - Only syncs fields that were in the update payload
 - Uses `.eq('email', email).neq('id', savedId)` to update OTHER rows (not the one just saved)
 - Non-fatal: if sync fails, the primary save still succeeds
+
+---
+
+## 6.1 Opt-in Status Sync (contacts → main_contacts)
+
+`main_contacts.optin_status` is a **derived aggregate** of the email's engagement rows, recomputed with a "worst status wins" rule:
+
+```
+Hard Bounced  >  Unsubscribed  >  Subscribed
+```
+
+If ANY contacts row for the email is Hard Bounced, the master record shows Hard Bounced; otherwise Unsubscribed wins if present; otherwise Subscribed. Emails with **no** contacts rows are left untouched (the status may have been set manually on a main-only record).
+
+Enforced in two layers:
+
+1. **Database trigger** (`trg_contacts_sync_main_optin`, see `SYNC_MAIN_OPTIN.sql`) — AFTER INSERT/UPDATE/DELETE on `contacts`, recomputes `main_contacts.optin_status` inside Postgres. Covers every write path: API routes, CSV bulk upload, SQL Query Box, chat agent, manual SQL.
+2. **Application helper** (`lib/syncOptinStatus.ts` → `syncMainOptinStatusForEmails()`) — called by `POST/PUT /api/contacts` and `POST /api/contacts/bulk` after a successful save. Belt-and-braces so deployments without the SQL migration still sync correctly.
+
+DELETE /api/contacts (by `emails`) reports an accurate `deleted` count (actual engagement rows removed) and a `notFound` list (requested emails that matched nothing), so the BulkDeleteModal results screen no longer guesses.
 
 ---
 

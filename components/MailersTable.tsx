@@ -188,9 +188,41 @@ export default function MailersTable(props: Props) {
   }
 
   function downloadCSV(mode: "all" | "selected" = "all") {
-    // CSV export uses ONLY the currently visible page (server-paged mode) or
-    // the override rows. For a full export use the SQL Query Box.
-    const exportRows = mode === "selected" ? rows.filter((r) => selected.has(r.mailer_id)) : rows;
+    // "selected" exports the ticked rows (they live on the current page).
+    const selectedRows = mode === "selected" ? rows.filter((r) => selected.has(r.mailer_id)) : [];
+    if (mode === "selected") { buildCsvAndDownload(selectedRows, mode); return; }
+    // "all": override mode exports what's on screen; server-paged mode fetches
+    // EVERY row matching the current filters (export=1) so the CSV row count
+    // matches the header total — not just the visible 25-row page.
+    if (!isServerPaged) { buildCsvAndDownload(rows, mode); return; }
+    setExporting(true);
+    const params = new URLSearchParams();
+    params.set("export", "1");
+    if (debouncedSearch.trim()) params.set("q", debouncedSearch.trim());
+    if (debouncedFilters.min_open_rate)        params.set("minOpen",   debouncedFilters.min_open_rate);
+    if (debouncedFilters.min_click_rate)       params.set("minClick",  debouncedFilters.min_click_rate);
+    if (debouncedFilters.min_unsubscribe_rate) params.set("minUnsub",  debouncedFilters.min_unsubscribe_rate);
+    if (debouncedFilters.min_hardbounce_rate)  params.set("minBounce", debouncedFilters.min_hardbounce_rate);
+    if (debouncedFilters.sent_after)           params.set("sentAfter", debouncedFilters.sent_after);
+    if (debouncedFilters.sent_before)          params.set("sentBefore", debouncedFilters.sent_before);
+    if (debouncedFilters.has_unsubscribed)     params.set("hasUnsub",  debouncedFilters.has_unsubscribed);
+    if (debouncedFilters.has_hardbounced)      params.set("hasBounced", debouncedFilters.has_hardbounced);
+    if (sortBy) { params.set("sortBy", String(sortBy)); params.set("sortDir", sortDir); }
+    fetch(`/api/mailers?${params.toString()}`)
+      .then(async (res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      })
+      .then((json) => {
+        const allRows = (json.rows ?? []) as MailerRow[];
+        buildCsvAndDownload(allRows, mode);
+      })
+      .catch((err) => { alert(`CSV export failed: ${err instanceof Error ? err.message : String(err)}`); })
+      .finally(() => setExporting(false));
+  }
+
+  const [exporting, setExporting] = useState(false);
+  function buildCsvAndDownload(exportRows: MailerRow[], mode: "all" | "selected") {
     if (exportRows.length === 0) return;
     const headers = ALL_COLUMNS.map((c) => c.label);
     const rows_data = exportRows.map((row) =>
@@ -345,11 +377,15 @@ export default function MailersTable(props: Props) {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
             </svg>
           </div>
-          <button onClick={() => downloadCSV(selected.size > 0 ? "selected" : "all")} className="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors flex items-center gap-1.5" title={selected.size > 0 ? `Export ${selected.size} selected` : `Export current page (${rows.length})`}>
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-            </svg>
-            <span className="hidden sm:inline">{selected.size > 0 ? `CSV (${selected.size})` : "CSV"}</span>
+          <button onClick={() => downloadCSV(selected.size > 0 ? "selected" : "all")} disabled={exporting} className="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors flex items-center gap-1.5 disabled:opacity-50" title={selected.size > 0 ? `Export ${selected.size} selected` : `Export ALL matching records (${total})`}>
+            {exporting ? (
+              <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeOpacity="0.25" /><path fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" /></svg>
+            ) : (
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+            )}
+            <span className="hidden sm:inline">{exporting ? "Exporting…" : selected.size > 0 ? `CSV (${selected.size})` : "CSV"}</span>
           </button>
           <button onClick={onBulkDelete} className="px-3 py-1.5 text-xs border border-red-200 hover:bg-red-50 text-red-600 rounded-lg transition-colors flex items-center gap-1.5" title="Bulk delete mailers via CSV or pasted mailer_id list">
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

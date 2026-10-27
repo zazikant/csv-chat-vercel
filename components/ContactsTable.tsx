@@ -146,10 +146,9 @@ export default function ContactsTable(props: Props) {
   function toggleAll() { setSelected((prev) => { const n = new Set(prev); if (allSelected) allOnPage.forEach((id) => n.delete(id)); else allOnPage.forEach((id) => n.add(id)); return n; }); }
   function toggleRow(id: number) { setSelected((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; }); }
   function handleBulkDelete() { if (selected.size === 0) return; if (!confirm(`Delete ${selected.size} selected?`)) return; onDeleteRows(Array.from(selected).map(String)); setSelected(new Set()); }
-  function downloadCSV(mode: "all" | "selected" = "all") {
-    // CSV export uses ONLY the currently visible page (server-paged mode) or
-    // the override rows. For a full export use the SQL Query Box.
-    const exportRows = mode === "selected" ? rows.filter((r) => selected.has(r.id)) : rows;
+
+  const [exporting, setExporting] = useState(false);
+  function buildCsvAndDownload(exportRows: ContactRow[], mode: "all" | "selected") {
     if (exportRows.length === 0) return;
     const headers = ALL_COLUMNS.map((c) => c.label);
     const rowsData = exportRows.map((row) => ALL_COLUMNS.map((c) => { const val = row[c.key]; if (val === null || val === undefined) return ""; if (typeof val === "string" && val.includes(",")) return `"${val}"`; return String(val); }));
@@ -157,6 +156,35 @@ export default function ContactsTable(props: Props) {
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a"); a.href = url; a.download = `contacts_${mode}_${new Date().toISOString().slice(0, 10)}.csv`; a.click(); URL.revokeObjectURL(url);
+  }
+  async function downloadCSV(mode: "all" | "selected" = "all") {
+    // "selected" exports the ticked rows (they live on the current page).
+    const selectedRows = mode === "selected" ? rows.filter((r) => selected.has(r.id)) : [];
+    if (mode === "selected") { buildCsvAndDownload(selectedRows, mode); return; }
+    // "all": in override mode (SQL chat / SQL box results) export exactly the
+    // rows on screen. In server-paged mode fetch EVERY row matching the
+    // current filters from the server (export=1), so the CSV row count always
+    // matches the header total — not just the visible 25-row page.
+    if (!isServerPaged) { buildCsvAndDownload(rows, mode); return; }
+    setExporting(true);
+    try {
+      const params = new URLSearchParams();
+      params.set("export", "1");
+      if (debouncedSearch.trim()) params.set("q", debouncedSearch.trim());
+      if (debouncedFilters.optin_status)     params.set("optin", debouncedFilters.optin_status);
+      if (debouncedFilters.engagement_score) params.set("engagement", debouncedFilters.engagement_score);
+      if (debouncedFilters.mailer_id)        params.set("mailer", debouncedFilters.mailer_id);
+      const res = await fetch(`/api/contacts?${params.toString()}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = await res.json();
+      const allRows = (json.rows ?? []) as ContactRow[];
+      if (allRows.length === 0) return;
+      buildCsvAndDownload(allRows, mode);
+    } catch (err) {
+      alert(`CSV export failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setExporting(false);
+    }
   }
   function formatValue(row: ContactRow, key: keyof ContactRow): React.ReactNode {
     const val = row[key];
@@ -215,7 +243,7 @@ export default function ContactsTable(props: Props) {
             )}
             <svg className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
           </div>
-          <button onClick={() => downloadCSV(selected.size > 0 ? "selected" : "all")} className="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors flex items-center gap-1.5" title={selected.size > 0 ? `Export ${selected.size} selected` : `Export current page (${rows.length})`}><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg><span className="hidden sm:inline">{selected.size > 0 ? `CSV (${selected.size})` : "CSV"}</span></button>
+          <button onClick={() => downloadCSV(selected.size > 0 ? "selected" : "all")} disabled={exporting} className="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors flex items-center gap-1.5 disabled:opacity-50" title={selected.size > 0 ? `Export ${selected.size} selected` : `Export ALL matching records (${total})`}>{exporting ? <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeOpacity="0.25" /><path fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" /></svg> : <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>}<span className="hidden sm:inline">{exporting ? "Exporting…" : selected.size > 0 ? `CSV (${selected.size})` : "CSV"}</span></button>
           <button onClick={onUpload} className="px-3 py-1.5 text-xs border border-gray-200 hover:bg-gray-50 text-gray-600 rounded-lg transition-colors flex items-center gap-1.5"><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg><span className="hidden sm:inline">Upload</span></button>
           <button onClick={onBulkDelete} className="px-3 py-1.5 text-xs border border-red-200 hover:bg-red-50 text-red-600 rounded-lg transition-colors flex items-center gap-1.5"><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg><span className="hidden sm:inline">Delete CSV</span></button>
           <button onClick={onAdd} className="px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-1.5"><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg><span className="hidden sm:inline">Add</span></button>

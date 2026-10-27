@@ -30,6 +30,38 @@ function isMissingColumnError(msg: string): boolean {
   return /column .* does not exist|relation .* does not exist/.test(msg);
 }
 
+const EXPORT_PAGE_SIZE = 1000;
+const EXPORT_MAX_PAGES = 200; // hard cap: 200 × 1000 = 200k rows
+
+/** In-memory filter used by the no-RPC fallback paths. Mirrors search_main_contacts semantics. */
+function filterMainContactsInMemory(
+  all: Record<string, unknown>[],
+  filters: { q: string | null; optin: string | null; city: string | null; sector: string | null; source: string | null; tag: string | null; assigned: string | null },
+): Record<string, unknown>[] {
+  const needle = filters.q ? filters.q.toLowerCase() : null;
+  return all.filter((r) => {
+    if (filters.optin   && r.optin_status !== filters.optin) return false;
+    if (filters.city    && r.city         !== filters.city)  return false;
+    if (filters.sector  && !(Array.isArray(r.sector)      && (r.sector      as string[]).includes(filters.sector))) return false;
+    if (filters.source  && !(Array.isArray(r.source)      && (r.source      as string[]).includes(filters.source))) return false;
+    if (filters.tag     && !(Array.isArray(r.tags)        && (r.tags        as string[]).includes(filters.tag)))    return false;
+    if (filters.assigned&& !(Array.isArray(r.assigned_to) && (r.assigned_to as string[]).includes(filters.assigned))) return false;
+    if (needle) {
+      const hay = [r.name, r.company, r.designation, r.email, r.city, r.phone, r.remarks, r.location]
+        .filter((v) => v != null)
+        .map((v) => String(v).toLowerCase())
+        .join(" ");
+      const inArrays =
+        (Array.isArray(r.tags)        && (r.tags        as string[]).some((t) => t.toLowerCase().includes(needle))) ||
+        (Array.isArray(r.sector)      && (r.sector      as string[]).some((t) => t.toLowerCase().includes(needle))) ||
+        (Array.isArray(r.source)      && (r.source      as string[]).some((t) => t.toLowerCase().includes(needle))) ||
+        (Array.isArray(r.assigned_to) && (r.assigned_to as string[]).some((t) => t.toLowerCase().includes(needle)));
+      if (!hay.includes(needle) && !inArrays) return false;
+    }
+    return true;
+  });
+}
+
 /**
  * Server-side paginated + filtered + searched list of main_contacts.
  *
@@ -40,11 +72,13 @@ function isMissingColumnError(msg: string): boolean {
  *
  * When the search RPC is unavailable (column mismatch on old schemas),
  * we fall back to a `fetchAll` + filter pipeline so the page still renders.
+ *
+ * `export=1` (instead of page/pageSize): CSV-export mode — returns ALL rows
+ * matching the same filters ({ rows, total, exported: true }), looping the
+ * RPC 1000 rows at a time so the CSV matches the on-screen total exactly.
  */
 export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams;
-  const page = Math.max(1, parseInt(sp.get("page") ?? "1", 10) || 1);
-  const pageSize = Math.min(100, Math.max(1, parseInt(sp.get("pageSize") ?? "25", 10) || 25));
   const q       = (sp.get("q")        ?? "").trim() || null;
   const optin   = (sp.get("optin")    ?? "").trim() || null;
   const city    = (sp.get("city")     ?? "").trim() || null;
@@ -52,6 +86,66 @@ export async function GET(req: NextRequest) {
   const source  = (sp.get("source")   ?? "").trim() || null;
   const tag     = (sp.get("tag")      ?? "").trim() || null;
   const assigned= (sp.get("assigned") ?? "").trim() || null;
+
+  // ---- CSV export mode: ALL filtered rows, no pagination ----------------
+  if (sp.get("export") === "1") {
+    let rpcAvailable = true;
+    const allRows: Record<string, unknown>[] = [];
+    let total = 0;
+
+    for (let pageNum = 1; pageNum <= EXPORT_MAX_PAGES; pageNum++) {
+      const { data: rpcRows, error: rpcError } = await supabase.rpc("search_main_contacts" as never, {
+        p_search: q,
+        p_optin_status: optin,
+        p_city: city,
+        p_sector: sector,
+        p_source: source,
+        p_tag: tag,
+        p_assigned_to: assigned,
+        p_page: pageNum,
+        p_page_size: EXPORT_PAGE_SIZE,
+      } as never);
+      if (rpcError || !Array.isArray(rpcRows)) {
+        if (rpcError && !isMissingColumnError(rpcError.message)) {
+          return NextResponse.json({ error: rpcError.message }, { status: 500 });
+        }
+        rpcAvailable = false;
+        break;
+      }
+      if (rpcRows.length > 0) {
+        total = Number((rpcRows[0] as Record<string, unknown>)._total_count ?? 0);
+      }
+      for (const r of rpcRows) {
+        const { _total_count: _ignored, ...rest } = r as Record<string, unknown>;
+        void _ignored;
+        allRows.push(rest);
+      }
+      if (allRows.length >= total || rpcRows.length < EXPORT_PAGE_SIZE) break;
+    }
+
+    if (rpcAvailable) {
+      return NextResponse.json({ rows: allRows, total, exported: true });
+    }
+
+    try {
+      const all = await fetchAll<Record<string, unknown>>(
+        "main_contacts",
+        [
+          { column: "created_date", ascending: false, nullsFirst: false },
+          { column: "created_at",   ascending: false, nullsFirst: false },
+          { column: "email",        ascending: true },
+        ],
+      );
+      const filtered = filterMainContactsInMemory(all, { q, optin, city, sector, source, tag, assigned });
+      return NextResponse.json({ rows: filtered, total: filtered.length, exported: true });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return NextResponse.json({ error: msg }, { status: 500 });
+    }
+  }
+
+  const page = Math.max(1, parseInt(sp.get("page") ?? "1", 10) || 1);
+  const pageSize = Math.min(100, Math.max(1, parseInt(sp.get("pageSize") ?? "25", 10) || 25));
 
   // Try the RPC path first — single round-trip, server-side filter+count.
   const rpcArgs = {
@@ -100,28 +194,7 @@ export async function GET(req: NextRequest) {
         { column: "email",        ascending: true },
       ],
     );
-    const needle = q ? q.toLowerCase() : null;
-    const filtered = all.filter((r) => {
-      if (optin   && r.optin_status !== optin) return false;
-      if (city    && r.city         !== city)  return false;
-      if (sector  && !(Array.isArray(r.sector)      && (r.sector      as string[]).includes(sector))) return false;
-      if (source  && !(Array.isArray(r.source)      && (r.source      as string[]).includes(source))) return false;
-      if (tag     && !(Array.isArray(r.tags)        && (r.tags        as string[]).includes(tag)))    return false;
-      if (assigned&& !(Array.isArray(r.assigned_to) && (r.assigned_to as string[]).includes(assigned))) return false;
-      if (needle) {
-        const hay = [r.name, r.company, r.designation, r.email, r.city, r.phone, r.remarks, r.location]
-          .filter((v) => v != null)
-          .map((v) => String(v).toLowerCase())
-          .join(" ");
-        const inArrays =
-          (Array.isArray(r.tags)        && (r.tags        as string[]).some((t) => t.toLowerCase().includes(needle))) ||
-          (Array.isArray(r.sector)      && (r.sector      as string[]).some((t) => t.toLowerCase().includes(needle))) ||
-          (Array.isArray(r.source)      && (r.source      as string[]).some((t) => t.toLowerCase().includes(needle))) ||
-          (Array.isArray(r.assigned_to) && (r.assigned_to as string[]).some((t) => t.toLowerCase().includes(needle)));
-        if (!hay.includes(needle) && !inArrays) return false;
-      }
-      return true;
-    });
+    const filtered = filterMainContactsInMemory(all, { q, optin, city, sector, source, tag, assigned });
     const total = filtered.length;
     const start = (page - 1) * pageSize;
     const rows = filtered.slice(start, start + pageSize);
@@ -337,29 +410,37 @@ export async function DELETE(req: NextRequest) {
   if (Array.isArray(body.emails)) {
     // Chunk the deletes — Supabase's .in() filter bails on very large arrays
     // (URL length + query planner limits). 500 per batch is a safe ceiling.
+    // `.select("email")` returns the rows actually deleted so the UI can
+    // report an accurate count + not-found list.
     const BATCH = 500;
-    const emails = body.emails.map((e: string) => String(e).toLowerCase());
+    const emails = body.emails.map((e: string) => String(e).toLowerCase()).filter(Boolean);
+    if (emails.length === 0) return NextResponse.json({ error: "emails array is empty" }, { status: 400 });
+    const requested = new Set(emails);
     let deletedCount = 0;
+    const foundEmails = new Set<string>();
     const errors: string[] = [];
     for (let i = 0; i < emails.length; i += BATCH) {
       const batch = emails.slice(i, i + BATCH);
-      const { error } = await supabase
+      const { data: deletedRows, error } = await supabase
         .from("main_contacts")
         .delete()
-        .in("email", batch);
+        .in("email", batch)
+        .select("email");
       if (error) {
         errors.push(`Batch ${Math.floor(i / BATCH) + 1}: ${error.message}`);
       } else {
-        deletedCount += batch.length;
+        deletedCount += (deletedRows ?? []).length;
+        for (const r of deletedRows ?? []) foundEmails.add(String(r.email).toLowerCase());
       }
     }
+    const notFound = Array.from(requested).filter((e) => !foundEmails.has(e));
     if (errors.length > 0) {
       return NextResponse.json(
-        { error: `Some batches failed: ${errors.join("; ")}`, deleted: deletedCount },
+        { error: `Some batches failed: ${errors.join("; ")}`, deleted: deletedCount, notFound },
         { status: 500 }
       );
     }
-    return NextResponse.json({ success: true, deleted: deletedCount });
+    return NextResponse.json({ success: true, deleted: deletedCount, notFound });
   }
   const { email } = body;
   if (!email) return NextResponse.json({ error: "email or emails is required" }, { status: 400 });
