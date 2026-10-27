@@ -415,7 +415,7 @@ export async function DELETE(req: NextRequest) {
     const BATCH = 500;
     const emails = body.emails.map((e: string) => String(e).toLowerCase()).filter(Boolean);
     if (emails.length === 0) return NextResponse.json({ error: "emails array is empty" }, { status: 400 });
-    const requested = new Set(emails);
+    const requested = new Set<string>(emails);
     let deletedCount = 0;
     const foundEmails = new Set<string>();
     const errors: string[] = [];
