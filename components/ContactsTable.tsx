@@ -4,6 +4,7 @@ import { useEffect, useState, useTransition } from "react";
 import { ContactRow } from "@/lib/langgraph/state";
 import { useDebounce } from "@/hooks/useDebounce";
 import SearchableFilter from "@/components/SearchableFilter";
+import { csvCell } from "@/lib/csv";
 
 const ALL_COLUMNS: { key: keyof ContactRow; label: string }[] = [
   { key: "email",             label: "Email" },
@@ -151,7 +152,7 @@ export default function ContactsTable(props: Props) {
   function buildCsvAndDownload(exportRows: ContactRow[], mode: "all" | "selected") {
     if (exportRows.length === 0) return;
     const headers = ALL_COLUMNS.map((c) => c.label);
-    const rowsData = exportRows.map((row) => ALL_COLUMNS.map((c) => { const val = row[c.key]; if (val === null || val === undefined) return ""; if (typeof val === "string" && val.includes(",")) return `"${val}"`; return String(val); }));
+    const rowsData = exportRows.map((row) => ALL_COLUMNS.map((c) => csvCell(row[c.key])));
     const csv = [headers, ...rowsData].map((r) => r.join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);

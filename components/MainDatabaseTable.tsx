@@ -5,6 +5,7 @@ import { MainContactRow } from "@/lib/langgraph/state";
 import { useDebounce } from "@/hooks/useDebounce";
 import SearchableFilter from "@/components/SearchableFilter";
 import RemarksModal from "@/components/RemarksModal";
+import { csvCell } from "@/lib/csv";
 
 const ALL_COLUMNS: { key: keyof MainContactRow; label: string }[] = [
   { key: "name",        label: "Name" },
@@ -232,10 +233,9 @@ export default function MainDatabaseTable(props: Props) {
     const rowsData = exportRows.map((row) => [...exportCols.map((c) => {
       const val = row[c.key];
       if (val === null || val === undefined) return "";
-      if (c.key === "tags" || c.key === "sector" || c.key === "source" || c.key === "assigned_to") { const a = val as unknown as string[]; return a.length > 0 ? `"${a.join(", ")}"` : ""; }
-      if (typeof val === "string" && val.includes(",")) return `"${val}"`;
-      return String(val);
-    }), String(totalMailsSent.get(row.email.toLowerCase()) ?? 0)]);
+      if (c.key === "tags" || c.key === "sector" || c.key === "source" || c.key === "assigned_to") { const a = val as unknown as string[]; return csvCell(a.length > 0 ? a.join(", ") : ""); }
+      return csvCell(val);
+    }), csvCell(String(totalMailsSent.get(row.email.toLowerCase()) ?? 0))]);
     const csv = [headers, ...rowsData].map((r) => r.join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv" }); const url = URL.createObjectURL(blob);
     const a = document.createElement("a"); a.href = url; a.download = `main_database_${mode}_${new Date().toISOString().slice(0, 10)}.csv`; a.click(); URL.revokeObjectURL(url);

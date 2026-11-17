@@ -3,6 +3,7 @@
 import { useEffect, useState, useTransition } from "react";
 import { MailerRow } from "@/lib/langgraph/state";
 import { useDebounce } from "@/hooks/useDebounce";
+import { csvCell } from "@/lib/csv";
 
 const ALL_COLUMNS: { key: keyof MailerRow; label: string }[] = [
   { key: "mailer_id",          label: "Mailer ID" },
@@ -225,14 +226,7 @@ export default function MailersTable(props: Props) {
   function buildCsvAndDownload(exportRows: MailerRow[], mode: "all" | "selected") {
     if (exportRows.length === 0) return;
     const headers = ALL_COLUMNS.map((c) => c.label);
-    const rows_data = exportRows.map((row) =>
-      ALL_COLUMNS.map((c) => {
-        const val = row[c.key];
-        if (val === null || val === undefined) return "";
-        if (typeof val === "string" && val.includes(",")) return `"${val}"`;
-        return String(val);
-      })
-    );
+    const rows_data = exportRows.map((row) => ALL_COLUMNS.map((c) => csvCell(row[c.key])));
     const csv = [headers, ...rows_data].map((r) => r.join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);

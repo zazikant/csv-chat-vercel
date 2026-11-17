@@ -231,11 +231,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "subject_line is required" }, { status: 400 });
   }
 
-  // Strip auto-maintained / generated fields
+  // Strip auto-maintained / generated fields. hardbounce_rate is a GENERATED
+  // Postgres column (writing it fails the whole query with 428C9) and
+  // hardbounced_count is trigger-maintained from contacts — neither may ever
+  // come in through the API.
   for (const f of [
     "total_sent","unique_opens","total_opens","unique_clicks",
-    "total_clicks","unsubscribed_count","open_rate","click_rate",
-    "unsubscribe_rate","created_at","updated_at",
+    "total_clicks","unsubscribed_count","hardbounced_count","hardbounce_rate",
+    "open_rate","click_rate","unsubscribe_rate","created_at","updated_at",
   ]) {
     delete body[f];
   }
@@ -247,6 +250,10 @@ export async function POST(req: NextRequest) {
     .single();
 
   if (error) {
+    // Friendly message for the common case (duplicate mailer_id).
+    if (error.code === "23505") {
+      return NextResponse.json({ error: `Mailer ID "${body.mailer_id}" already exists` }, { status: 409 });
+    }
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
   return NextResponse.json(data, { status: 201 });
@@ -260,11 +267,14 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ error: "mailer_id is required" }, { status: 400 });
   }
 
-  // Strip auto-maintained / generated fields
+  // Strip auto-maintained / generated fields. hardbounce_rate is a GENERATED
+  // Postgres column (writing it fails the whole query with 428C9) and
+  // hardbounced_count is trigger-maintained from contacts — neither may ever
+  // come in through the API.
   for (const f of [
     "total_sent","unique_opens","total_opens","unique_clicks",
-    "total_clicks","unsubscribed_count","open_rate","click_rate",
-    "unsubscribe_rate","created_at","updated_at",
+    "total_clicks","unsubscribed_count","hardbounced_count","hardbounce_rate",
+    "open_rate","click_rate","unsubscribe_rate","created_at","updated_at",
   ]) {
     delete fields[f];
   }

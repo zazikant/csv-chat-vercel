@@ -113,6 +113,7 @@ export default function MailerEditModal({ record, mode, onClose, onSave }: Props
       });
       if (!res.ok) throw new Error("Delete failed");
       onSave();
+      onClose(); // the record is gone — don't leave the modal open on stale data
     } catch (err) {
       setError(err instanceof Error ? err.message : "Delete failed");
     } finally {
