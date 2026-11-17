@@ -60,7 +60,9 @@ export default function CSVUploadModal({ onClose, onUpload, tab }: Props) {
     const data: Record<string, unknown> = {};
     const str = (v: string | undefined, key: string) => { const t = (v || "").trim(); if (t) data[key] = t; };
     const arr = (v: string | undefined, key: string) => { const t = (v || "").trim(); data[key] = t ? t.split(/[,;]/).map((s) => s.trim().toLowerCase()).filter(Boolean) : []; };
-    const num = (v: string | undefined, key: string) => { const t = (v || "").trim(); data[key] = t ? (parseInt(t, 10) || 0) : 0; };
+    // Empty cell → null instead of 0, so the bulk API can tell "leave the
+    // stored value alone" (null) apart from an explicit "set to 0".
+    const numOrNull = (v: string | undefined, key: string) => { const t = (v || "").trim(); data[key] = t ? (parseInt(t, 10) || 0) : null; };
 
     str(row.email, "email");
     if (!data.email) errors.push("email is required");
@@ -75,7 +77,7 @@ export default function CSVUploadModal({ onClose, onUpload, tab }: Props) {
       arr(row.sector, "sector"); arr(row.source, "source"); arr(row.assigned_to, "assigned_to"); arr(row.tags, "tags");
       str(row.optin_status, "optin_status"); str(row.remarks, "remarks"); str(row.location, "location");
     } else {
-      str(row.mailer_id, "mailer_id"); num(row.opens, "opens"); num(row.clicks, "clicks"); str(row.optin_status, "optin_status");
+      str(row.mailer_id, "mailer_id"); numOrNull(row.opens, "opens"); numOrNull(row.clicks, "clicks"); str(row.optin_status, "optin_status");
     }
     return { rowIndex: index, data, errors };
   }

@@ -34,28 +34,38 @@ export async function syncMainOptinStatusForEmails(emails: unknown[]): Promise<v
   if (unique.length === 0) return;
 
   // 1. Pull every contacts row for these emails and aggregate per email.
+  // The email batches are additionally paged: an email can have one contacts
+  // row per mailer, so a 500-email batch can exceed the 1000-row cap
+  // PostgREST applies to un-paginated queries — without paging, "Hard
+  // Bounced" rows past the cap would be missed here and the master record
+  // would end up with a milder status than the engagement rows say.
   const BATCH = 500;
+  const PAGE_SIZE = 1000;
   interface Agg { hb: boolean; unsub: boolean; any: boolean }
   const aggByEmail = new Map<string, Agg>();
 
   for (let i = 0; i < unique.length; i += BATCH) {
     const batch = unique.slice(i, i + BATCH);
-    const { data, error } = await supabase
-      .from("contacts")
-      .select("email,optin_status")
-      .in("email", batch);
-    if (error) {
-      console.error("syncMainOptinStatusForEmails: select failed:", error.message);
-      return;
-    }
-    for (const row of data ?? []) {
-      const email = String(row.email ?? "").toLowerCase();
-      if (!email) continue;
-      const agg = aggByEmail.get(email) ?? { hb: false, unsub: false, any: false };
-      if (row.optin_status === "Hard Bounced") agg.hb = true;
-      else if (row.optin_status === "Unsubscribed") agg.unsub = true;
-      agg.any = true;
-      aggByEmail.set(email, agg);
+    for (let from = 0; ; from += PAGE_SIZE) {
+      const { data, error } = await supabase
+        .from("contacts")
+        .select("email,optin_status")
+        .in("email", batch)
+        .range(from, from + PAGE_SIZE - 1);
+      if (error) {
+        console.error("syncMainOptinStatusForEmails: select failed:", error.message);
+        return;
+      }
+      for (const row of data ?? []) {
+        const email = String(row.email ?? "").toLowerCase();
+        if (!email) continue;
+        const agg = aggByEmail.get(email) ?? { hb: false, unsub: false, any: false };
+        if (row.optin_status === "Hard Bounced") agg.hb = true;
+        else if (row.optin_status === "Unsubscribed") agg.unsub = true;
+        agg.any = true;
+        aggByEmail.set(email, agg);
+      }
+      if (!data || data.length < PAGE_SIZE) break; // last page reached
     }
   }
   if (aggByEmail.size === 0) return;
